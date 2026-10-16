@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: #0099FF;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius-btn: 12px;
+  --radius-card: 16px;
+}
+
+:root {
+  --page: #FFFFFF;
+  --surface: #F7F8FA;
+  --card: #FFFFFF;
+  --line: #E5E7EB;
+  --ink: #0A0A0B;
+  --muted: #6B7280;
+}
+
+.dark {
+  --page: #0A0A0B;
+  --surface: #111113;
+  --card: #16161A;
+  --line: rgba(255, 255, 255, 0.08);
+  --ink: #FFFFFF;
+  --muted: #A1A1AA;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--page);
+  color: var(--ink);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+/* Primary action gradient */
+.bg-primary-gradient {
+  background: linear-gradient(135deg, #0099FF 0%, #6D5DFC 100%);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #0099FF 0%, #6D5DFC 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
