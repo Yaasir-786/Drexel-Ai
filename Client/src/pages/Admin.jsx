@@ -17,7 +17,7 @@ import UsersTable from '../components/admin/UsersTable';
 import UserDrawer from '../components/admin/UserDrawer';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
-import { useAuth } from '../context/AuthContext';
+import { useSelector } from 'react-redux';
 
 // MOCK DATA: replace with API data later
 const INITIAL_USERS = [
@@ -30,7 +30,8 @@ const INITIAL_USERS = [
 ];
 
 export default function Admin() {
-  const { isAdmin } = useAuth();
+  const { user } = useSelector((state) => state.auth);
+  const isAdmin = user?.userType === "ADMIN";
   const [users, setUsers] = useState(INITIAL_USERS);
   const [searchQuery, setSearchQuery] = useState('');
 

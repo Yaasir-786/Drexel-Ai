@@ -42,27 +42,41 @@ const makeSender = (res) => (event, data) => {
 // meta, status, token, plan, agent_switch, file_start, file_chunk, file_end,
 // warning, error, credits, done
 const streamAgent = async (req, res) => {
-  const { projectId, mode, type, attachments } = req.body;
+  const { projectId, chatId, mode, type, attachments } = req.body;
   const userId = req.user._id;
 
+  let project = null;
+  let chat = null;
+  const chatOnly = Boolean(chatId);
+
   // everything that can fail normally is checked BEFORE the stream opens
-  const project = await Project.findOne({
-    _id: projectId,
-    user: userId,
-  }).lean();
+  if (chatOnly) {
+    chat = await Chat.findOne({ _id: chatId, user: userId }).lean();
+    if (!chat) {
+      res.status(404);
+      throw new Error("Chat Not Found...");
+    }
+  } else {
+    project = await Project.findOne({
+      _id: projectId,
+      user: userId,
+    }).lean();
 
-  if (!project) {
-    res.status(404);
-    throw new Error("Project Not Found...");
+    if (!project) {
+      res.status(404);
+      throw new Error("Project Not Found...");
+    }
+
+    chat = await Chat.findOne({ project: project._id, user: userId }).lean();
+
+    if (!chat) {
+      chat = (
+        await Chat.create({ project: project._id, user: userId })
+      ).toObject();
+    }
   }
 
-  let chat = await Chat.findOne({ project: project._id, user: userId }).lean();
-
-  if (!chat) {
-    chat = (
-      await Chat.create({ project: project._id, user: userId })
-    ).toObject();
-  }
+  const currentFiles = chatOnly ? (chat.files || []) : (project.files || []);
 
   const history = chat.messages
     .slice(-HISTORY_LIMIT)
@@ -131,7 +145,7 @@ const streamAgent = async (req, res) => {
   };
 
   try {
-    send("meta", { projectId, mode, type });
+    send("meta", { projectId: project?._id, chatId: chat._id, mode, type });
 
     let goBuild = mode === "build" || type === "fix";
 
@@ -151,7 +165,7 @@ const streamAgent = async (req, res) => {
         const chatResult = await runChatAgent({
           history,
           content: userContent,
-          filesContext: buildFilesContext(project.files, { budget: 6000 }),
+          filesContext: buildFilesContext(currentFiles, { budget: 6000 }),
           useVision: hasImages && allowImages,
           signal,
           onText: (text) =>
@@ -170,7 +184,7 @@ const streamAgent = async (req, res) => {
     // ---------- BUILD: Planner (plan) -> Coder (code -> review -> fix) ----------
     if (goBuild && !signal.aborted) {
       effectiveMode = "build";
-      const hasFiles = project.files.length > 0;
+      const hasFiles = currentFiles.length > 0;
       let plan;
 
       if (type === "fix") {
@@ -179,6 +193,7 @@ const streamAgent = async (req, res) => {
           summary: "Fix the error shown in the live preview.",
           complexity: "small",
           mode: "edit",
+          preview: chatOnly ? (chat.preview !== false) : true,
           pages: [],
           components: [],
           steps: ["Find the cause of the error", "Fix only the affected files"],
@@ -193,13 +208,14 @@ const streamAgent = async (req, res) => {
         const planned = await runPlannerAgent({
           request: userContent,
           history,
-          filesContext: buildFilesContext(project.files, { budget: 6000 }),
+          filesContext: buildFilesContext(currentFiles, { budget: 6000 }),
           hasFiles,
           useVision: hasImages && allowImages,
           signal,
         });
 
         plan = planned.plan;
+        if (!chatOnly) plan.preview = true;
         addRecord({
           agent: "planner",
           recordMode: "build",
@@ -219,7 +235,7 @@ const streamAgent = async (req, res) => {
         plan,
         request: message,
         errorLog,
-        files: project.files,
+        files: currentFiles,
         signal,
         send,
       });
@@ -254,13 +270,14 @@ const streamAgent = async (req, res) => {
         } else {
           // merge new / changed files into the project
           const merged = new Map(
-            project.files.map((file) => [file.path, file.content]),
+            currentFiles.map((file) => [file.path, file.content]),
           );
           for (const file of coded.files) merged.set(file.path, file.content);
-          const files = [...merged].map(([path, fileContent]) => ({
+          const chatFiles = [...merged].map(([path, fileContent]) => ({
             path,
             content: fileContent,
           }));
+          const files = chatFiles;
           const totalChars = files.reduce(
             (sum, file) => sum + file.content.length,
             0,
@@ -275,23 +292,40 @@ const streamAgent = async (req, res) => {
               message: "Project is too large to save. Try a smaller change.",
             });
           } else {
-            const rename =
-              project.name === DEFAULT_PROJECT_NAME && plan.projectName;
-
-            await Project.updateOne(
-              { _id: project._id },
-              {
-                $set: { files, ...(rename && { name: plan.projectName }) },
-                $push: {
-                  versions: {
-                    $each: [
-                      { label: (message || plan.summary).slice(0, 100), files },
-                    ],
-                    $slice: -PROJECT_LIMITS.maxVersions,
+            if (chatOnly) {
+              const rename = (!chat.title || chat.title === "New chat") && plan.projectName;
+              await Chat.updateOne(
+                { _id: chat._id },
+                {
+                  $set: {
+                    files: chatFiles,
+                    preview:
+                      currentFiles.length > 0
+                        ? chat.preview !== false
+                        : plan.preview !== false,
+                    ...(rename && { title: plan.projectName }),
                   },
                 },
-              },
-            );
+              );
+            } else {
+              const rename =
+                project.name === DEFAULT_PROJECT_NAME && plan.projectName;
+
+              await Project.updateOne(
+                { _id: project._id },
+                {
+                  $set: { files, ...(rename && { name: plan.projectName }) },
+                  $push: {
+                    versions: {
+                      $each: [
+                        { label: (message || plan.summary).slice(0, 100), files },
+                      ],
+                      $slice: -PROJECT_LIMITS.maxVersions,
+                    },
+                  },
+                },
+              );
+            }
 
             changedFiles = paths;
           }
@@ -331,7 +365,7 @@ const streamAgent = async (req, res) => {
       };
 
       await Chat.updateOne(
-        { project: project._id, user: userId },
+        { _id: chat._id },
         {
           $inc: {
             creditsUsed: credit.round2(totalCredits),
@@ -365,7 +399,8 @@ const streamAgent = async (req, res) => {
       used: credit.round2(totalCredits),
     });
     send("done", {
-      projectId,
+      projectId: project?._id || null,
+      chatId: chat._id,
       mode: effectiveMode,
       aborted,
       failed: errored,

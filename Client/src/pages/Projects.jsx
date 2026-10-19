@@ -9,14 +9,17 @@ import {
   Trash2,
   FolderOpen,
 } from 'lucide-react';
+import { useSelector } from 'react-redux';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AppShell from '../components/layout/AppShell';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
-import { getSavedProjects, saveProject, deleteProject as removeProjectStorage } from '../utils/chatStorage';
+import projectService from '../services/projectService';
 
 export default function Projects() {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState(() => getSavedProjects());
+  const queryClient = useQueryClient();
+  const { user } = useSelector((state) => state.auth);
 
   // Active dropdown menu by project id
   const [activeMenuId, setActiveMenuId] = useState(null);
@@ -28,23 +31,37 @@ export default function Projects() {
   // Delete modal state
   const [deleteProject, setDeleteProject] = useState(null);
 
+  const { data: projects = [] } = useQuery({
+    queryKey: ["projects", "project"],
+    queryFn: () => projectService.getProjects(user?.token, "project"),
+    enabled: !!user?.token,
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, name }) => projectService.renameProject(user?.token, id, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", "project"] });
+      setRenameProject(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => projectService.deleteProject(user?.token, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", "project"] });
+      setDeleteProject(null);
+    },
+  });
+
   const handleSaveRename = (e) => {
     e.preventDefault();
     if (!newName.trim() || !renameProject) return;
-    const updated = projects.map((p) =>
-      p.id === renameProject.id ? { ...p, name: newName.trim(), updated: 'Updated just now' } : p
-    );
-    setProjects(updated);
-    saveProject({ ...renameProject, name: newName.trim() });
-    setRenameProject(null);
+    renameMutation.mutate({ id: renameProject._id, name: newName.trim() });
   };
 
   const handleConfirmDelete = () => {
     if (!deleteProject) return;
-    const updated = projects.filter((p) => p.id !== deleteProject.id);
-    setProjects(updated);
-    removeProjectStorage(deleteProject.id);
-    setDeleteProject(null);
+    deleteMutation.mutate(deleteProject._id);
   };
 
   return (
@@ -93,8 +110,8 @@ export default function Projects() {
           {/* Project Cards */}
           {projects.map((project) => (
             <div
-              key={project.id}
-              onClick={() => navigate(`/projects/${project.id}`)}
+              key={project._id}
+              onClick={() => navigate(`/projects/${project._id}`)}
               className="bg-card border border-line hover:border-[#0099FF] rounded-2xl p-5 flex flex-col justify-between cursor-pointer relative shadow-sm"
             >
               <div className="flex items-start justify-between gap-3">
@@ -107,13 +124,13 @@ export default function Projects() {
                   <button
                     type="button"
                     aria-label="Project actions"
-                    onClick={() => setActiveMenuId(activeMenuId === project.id ? null : project.id)}
+                    onClick={() => setActiveMenuId(activeMenuId === project._id ? null : project._id)}
                     className="p-1 rounded-lg text-muted hover:text-ink hover:bg-surface cursor-pointer"
                   >
                     <MoreVertical size={18} />
                   </button>
 
-                  {activeMenuId === project.id && (
+                  {activeMenuId === project._id && (
                     <div className="absolute right-0 top-8 w-36 bg-card border border-line rounded-xl shadow-lg py-1 z-20">
                       <button
                         type="button"
@@ -146,8 +163,8 @@ export default function Projects() {
                   {project.name}
                 </h3>
                 <div className="text-xs text-muted space-y-0.5">
-                  <div>{project.updated}</div>
-                  <div className="text-[11px] text-muted/80">{project.created}</div>
+                  <div>{"Updated " + new Date(project.updatedAt).toLocaleDateString("en-IN")}</div>
+                  <div className="text-[11px] text-muted/80">{"Created " + new Date(project.createdAt).toLocaleDateString("en-IN")}</div>
                 </div>
               </div>
             </div>

@@ -105,6 +105,10 @@ const schemas = {
     name: z.string().trim().min(1).max(60).optional(),
   }),
 
+  createChat: z.object({
+    title: z.string().trim().max(60).optional(),
+  }),
+
   renameProject: z.object({
     name: text("Name").trim().min(1, "Project name is required").max(60),
   }),
@@ -117,7 +121,8 @@ const schemas = {
 
   agent: z
     .object({
-      projectId: objectId,
+      projectId: objectId.optional(),
+      chatId: objectId.optional(),
       message: z
         .string()
         .trim()
@@ -127,6 +132,9 @@ const schemas = {
       type: z.enum(["prompt", "fix"]).default("prompt"),
       attachments: z.array(attachmentField).max(3).default([]),
       errorLog: z.string().max(4000).optional(),
+    })
+    .refine((data) => Boolean(data.projectId || data.chatId), {
+      message: "projectId or chatId is required",
     })
     .refine(
       (data) =>

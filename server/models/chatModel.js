@@ -50,13 +50,27 @@ const messageSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const fileSchema = new mongoose.Schema(
+  {
+    path: { type: String, required: true },
+    content: { type: String, default: "" },
+  },
+  { _id: false },
+);
+
 const chatSchema = new mongoose.Schema(
   {
     project: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Project",
-      required: true,
       unique: true,
+      sparse: true,
+    },
+    title: {
+      type: String,
+      default: "New chat",
+      trim: true,
+      maxlength: 60,
     },
     user: {
       type: mongoose.Schema.Types.ObjectId,
@@ -71,6 +85,11 @@ const chatSchema = new mongoose.Schema(
     tokensUsed: {
       type: Number,
       default: 0,
+    },
+    files: [fileSchema],
+    preview: {
+      type: Boolean,
+      default: true,
     },
     messages: [messageSchema],
   },

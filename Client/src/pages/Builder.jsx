@@ -1,179 +1,212 @@
 // Builder page: full-screen IDE layout with conditional workspace (Code/Preview panels hidden until code generated)
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MessageSquare, Code2, Eye, Sparkles, FolderKanban } from 'lucide-react';
+import { Code2, Eye } from 'lucide-react';
+import { useSelector, useDispatch } from 'react-redux';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import BuilderTopBar from '../components/builder/BuilderTopBar';
 import ChatPanel from '../components/builder/ChatPanel';
 import PreviewPanel from '../components/builder/PreviewPanel';
 import CodePanel from '../components/builder/CodePanel';
 import VersionHistory from '../components/builder/VersionHistory';
-import { getProject, saveProject, getSavedProjects } from '../utils/chatStorage';
+import projectService, { mapMessages } from '../services/projectService';
+import agentService from '../services/agentService';
+import { getProfile } from '../features/auth/authSlice';
+import { downloadZip } from '../utils/downloadFiles';
 
 export default function Builder() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const isNew = id === 'new';
+  const dispatch = useDispatch();
+  const queryClient = useQueryClient();
+  const { user } = useSelector((state) => state.auth);
 
-  const [projectData, setProjectData] = useState(null);
-  const [projectName, setProjectName] = useState(
-    isNew ? 'Untitled Project' : 'E-Commerce Storefront'
-  );
+  const isNew = id === 'new';
+  const [currentProjectId, setCurrentProjectId] = useState(isNew ? null : id);
+  const [projectName, setProjectName] = useState('Untitled Project');
   const [messages, setMessages] = useState([]);
-  const [files, setFiles] = useState({});
+  const [files, setFiles] = useState([]);
   const [hasGeneratedCode, setHasGeneratedCode] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // Tab state: [preview | code]
   const [activeTab, setActiveTab] = useState('preview');
+  const controllerRef = useRef(null);
 
-  // Load project on mount or id change
+  // Fetch project details if not "new"
+  const { data: project } = useQuery({
+    queryKey: ["project", id],
+    queryFn: () => projectService.getProject(user?.token, id),
+    enabled: id !== "new" && !!user?.token && !!id,
+  });
+
+  // Fetch chat history if not "new"
+  const { data: chatData } = useQuery({
+    queryKey: ["chat", id],
+    queryFn: () => projectService.getChat(user?.token, id),
+    enabled: id !== "new" && !!user?.token && !!id,
+  });
+
   useEffect(() => {
-    if (isNew) {
-      // New project starts a separate project-building chat
-      const newProjId = 'proj-' + Date.now();
-      const newProj = {
-        id: newProjId,
-        name: 'Untitled Project',
-        hasGeneratedCode: false,
-        messages: [],
-        files: {},
-      };
-      saveProject(newProj);
-      setProjectData(newProj);
-      setProjectName(newProj.name);
+    setCurrentProjectId(id === 'new' ? null : id);
+    if (id === 'new') {
+      setProjectName('Untitled Project');
       setMessages([]);
-      setFiles({});
+      setFiles([]);
       setHasGeneratedCode(false);
-      navigate(`/projects/${newProjId}`, { replace: true });
-    } else {
-      const existing = getProject(id);
-      if (existing) {
-        setProjectData(existing);
-        setProjectName(existing.name || 'Untitled Project');
-        setMessages(existing.messages || []);
-        setFiles(existing.files || {});
-        // Has generated code only if files exist and coder has created code
-        const hasCode =
-          existing.hasGeneratedCode ||
-          (existing.files && Object.keys(existing.files).length > 0 &&
-            existing.messages?.some((m) => m.type === 'coder'));
-        setHasGeneratedCode(Boolean(hasCode));
-      } else {
-        // Fallback to initial projects if available
-        const all = getSavedProjects();
-        if (all.length > 0) {
-          navigate(`/projects/${all[0].id}`, { replace: true });
-        } else {
-          navigate('/projects', { replace: true });
-        }
+    }
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (project) {
+      setProjectName(project.name || 'Untitled Project');
+      const projectFiles = project.files || [];
+      setFiles(projectFiles);
+      setHasGeneratedCode(projectFiles.length > 0);
+    }
+  }, [project]);
+
+  useEffect(() => {
+    if (chatData) {
+      setMessages(mapMessages(chatData));
+    }
+  }, [chatData]);
+
+  const handleRename = async (newName) => {
+    setProjectName(newName);
+    const targetId = currentProjectId || id;
+    if (targetId && targetId !== 'new') {
+      try {
+        await projectService.renameProject(user?.token, targetId, newName);
+        queryClient.invalidateQueries({ queryKey: ["project", targetId] });
+        queryClient.invalidateQueries({ queryKey: ["projects", "project"] });
+      } catch (err) {
+        console.error("Failed to rename project:", err);
       }
     }
-  }, [id, isNew]);
-
-  // Persist project changes
-  const persistProject = (updatedFields) => {
-    if (!projectData && !id) return;
-    const targetId = projectData?.id || id;
-    const updated = {
-      ...(projectData || {}),
-      id: targetId,
-      name: projectName,
-      messages,
-      files,
-      hasGeneratedCode,
-      ...updatedFields,
-    };
-    setProjectData(updated);
-    saveProject(updated);
   };
 
-  const handleRename = (newName) => {
-    setProjectName(newName);
-    persistProject({ name: newName });
-  };
+  const handleSendMessage = async (text, mode, attachments = [], type = "prompt", errorLog = "") => {
+    if ((!text?.trim() && type !== "fix") || isGenerating) return;
 
-  const handleSendMessage = (text, mode, attachments) => {
-    const userMsg = { type: 'user', text, mode, attachments, timestamp: Date.now() };
-    const updatedMessages = [...messages, userMsg];
-    setMessages(updatedMessages);
-    setIsGenerating(true);
+    let projectId = currentProjectId;
+    let isCreated = false;
 
-    const isBuildMode = mode === 'Build';
-    const isAppRequest =
-      text.toLowerCase().includes('build') ||
-      text.toLowerCase().includes('create') ||
-      text.toLowerCase().includes('generate') ||
-      text.toLowerCase().includes('app');
-
-    // Simulate agent response
-    setTimeout(() => {
-      if (isBuildMode || isAppRequest) {
-        // Build mode: trigger Planner and Coder, and reveal workspace!
-        const plannerMsg = {
-          type: 'planner',
-          plan: {
-            summary: `Synthesized architecture for "${text.slice(0, 45)}"`,
-            steps: [
-              'Scaffold core state management and routing',
-              'Generate responsive layout components',
-              'Integrate theme tokens and interactive controls',
-            ],
-            files: ['/src/App.jsx', '/src/components/Header.jsx', '/package.json'],
-          },
-        };
-
-        const coderMsg = {
-          type: 'coder',
-          summary: 'Constructed component hierarchy with Tailwind CSS and live interactive preview.',
-          files: ['/src/App.jsx', '/src/components/Header.jsx', '/src/components/ProductCard.jsx', '/package.json'],
-          status: 'Code compiled and verified.',
-        };
-
-        const newFiles = {
-          '/src/App.jsx': `import React from 'react';\nimport Header from './components/Header';\nimport ProductCard from './components/ProductCard';\n\nexport default function App() {\n  return (\n    <div className="min-h-screen bg-page text-ink">\n      <Header />\n      <main className="max-w-5xl mx-auto p-6">\n        <h1 className="text-2xl font-bold mb-4">${text.slice(0, 30)}</h1>\n        <ProductCard name="Interactive Component" price="$49.00" />\n      </main>\n    </div>\n  );\n}`,
-          '/src/components/Header.jsx': `import React from 'react';\n\nexport default function Header() {\n  return (\n    <header className="h-16 border-b border-line px-6 flex items-center justify-between bg-card">\n      <div className="font-bold text-lg text-ink">App Builder</div>\n    </header>\n  );\n}`,
-          '/package.json': `{\n  "name": "drexel-generated-app",\n  "version": "1.0.0"\n}`,
-        };
-
-        const allMessages = [...updatedMessages, plannerMsg, { type: 'switch' }, coderMsg];
-        setMessages(allMessages);
-        setFiles(newFiles);
-        setHasGeneratedCode(true);
-        setIsGenerating(false);
-
-        persistProject({
-          messages: allMessages,
-          files: newFiles,
-          hasGeneratedCode: true,
-        });
-      } else {
-        // Chat mode (simple question or code snippet request):
-        // Respond with code block in chat WITHOUT opening the Preview/Code workspace!
-        const assistantMsg = {
-          type: 'assistant',
-          text: `Here is the requested snippet:\n\n\`\`\`jsx\n// Helper snippet for: ${text}\nexport function useExample() {\n  const [active, setActive] = React.useState(false);\n  return { active, toggle: () => setActive(prev => !prev) };\n}\n\`\`\`\n\nYou can copy this snippet directly using the Copy button above.`,
-        };
-
-        const allMessages = [...updatedMessages, assistantMsg];
-        setMessages(allMessages);
-        setIsGenerating(false);
-
-        persistProject({
-          messages: allMessages,
-        });
+    try {
+      if (id === "new" || !projectId) {
+        const newProj = await projectService.createProject(user?.token, {});
+        projectId = newProj._id;
+        setCurrentProjectId(projectId);
+        isCreated = true;
+        queryClient.invalidateQueries({ queryKey: ["projects", "project"] });
       }
-    }, 2000);
+
+      const userMsg = {
+        type: 'user',
+        text: type === "fix" ? "Fix preview error" : text,
+        mode,
+        attachments: [],
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMsg]);
+
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      setIsGenerating(true);
+      setStatusMessage("Analyzing your request…");
+
+      await agentService.streamAgent({
+        token: user?.token,
+        body: {
+          projectId,
+          message: text || "",
+          mode: mode ? mode.toLowerCase() : "chat",
+          type,
+          errorLog,
+          attachments,
+        },
+        signal: controller.signal,
+        onEvent: (event, data) => {
+          if (event === "status") {
+            setStatusMessage(data.message);
+          } else if (event === "token") {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.type === "assistant" && last.isStreaming) {
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, text: last.text + data.text },
+                ];
+              }
+              return [
+                ...prev,
+                { type: "assistant", text: data.text, isStreaming: true },
+              ];
+            });
+          } else if (event === "credits") {
+            if (data.credits != null) {
+              dispatch(getProfile({ credits: data.credits }));
+            }
+          } else if (event === "error") {
+            toast.error(data.message);
+          } else if (event === "done") {
+            setIsGenerating(false);
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.isStreaming) {
+                return [...prev.slice(0, -1), { ...last, isStreaming: false }];
+              }
+              return prev;
+            });
+            if (isCreated) {
+              navigate(`/projects/${projectId}`, { replace: true });
+            }
+            queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+            queryClient.invalidateQueries({ queryKey: ["chat", projectId] });
+          }
+        },
+      });
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        toast.error(error.message || "Something went wrong");
+      }
+    } finally {
+      setIsGenerating(false);
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.isStreaming) {
+          return [...prev.slice(0, -1), { ...last, isStreaming: false }];
+        }
+        return prev;
+      });
+    }
   };
 
   const handleStopGenerating = () => {
-    setIsGenerating(false);
+    controllerRef.current?.abort();
   };
 
   const handleClearChat = () => {
     setMessages([]);
-    persistProject({ messages: [] });
   };
+
+  const handleFixError = (errorMessage) => {
+    handleSendMessage(
+      "The live preview shows an error. Find the cause and fix it.",
+      "build",
+      [],
+      "fix",
+      errorMessage,
+    );
+  };
+
+  const fileMap = Object.fromEntries(files.map((f) => [f.path, f.content]));
 
   return (
     <div className="h-screen flex flex-col bg-page text-ink overflow-hidden">
@@ -182,6 +215,7 @@ export default function Builder() {
         projectName={projectName}
         onRenameProject={handleRename}
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onDownloadZip={() => downloadZip(files, projectName)}
       />
 
       {/* Main Area */}
@@ -202,6 +236,7 @@ export default function Builder() {
                 isGenerating={isGenerating}
                 onStopGenerating={handleStopGenerating}
                 activeMode="Build"
+                statusMessage={statusMessage}
               />
             </div>
           </div>
@@ -217,6 +252,7 @@ export default function Builder() {
                 isGenerating={isGenerating}
                 onStopGenerating={handleStopGenerating}
                 activeMode="Build"
+                statusMessage={statusMessage}
               />
             </div>
 
@@ -260,9 +296,9 @@ export default function Builder() {
               {/* Workspace Content */}
               <div className="flex-1 min-h-0 overflow-hidden">
                 {activeTab === 'code' ? (
-                  <CodePanel isNew={false} isGenerating={isGenerating} />
+                  <CodePanel files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} />
                 ) : (
-                  <PreviewPanel isNew={false} error={null} />
+                  <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} onFixError={handleFixError} />
                 )}
               </div>
             </div>

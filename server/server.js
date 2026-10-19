@@ -17,6 +17,7 @@ import userRoutes from "./routes/userRoutes.js";
 import creditRoutes from "./routes/creditRoutes.js";
 import projectRoutes from "./routes/projectRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
+import chatListRoutes from "./routes/chatListRoutes.js";
 import agentRoutes from "./routes/agentRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
@@ -69,6 +70,9 @@ app.use("/api/credits", creditRoutes);
 // PROJECT ROUTES (+ chat history of a project)
 app.use("/api/projects", projectRoutes);
 app.use("/api/projects", chatRoutes);
+
+// CHAT ROUTES (standalone chats)
+app.use("/api/chats", chatListRoutes);
 
 // A.I AGENT ROUTES (planner + coder, streaming)
 app.use("/api/agent", agentRoutes);

@@ -1,22 +1,40 @@
 // Signup page with full validation for name, email, phone, and password
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import AuthLayout from '../components/AuthLayout';
-import Logo from '../components/Logo';
-import TextField from '../components/TextField';
-import Button from '../components/Button';
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import AuthLayout from "../components/AuthLayout";
+import Logo from "../components/Logo";
+import TextField from "../components/TextField";
+import Button from "../components/Button";
+import LoaderScreen from "../components/Loader";
+import authService from "../services/authService";
 
 export default function Signup() {
   const navigate = useNavigate();
 
   // Form field states
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
 
   // Inline error states
   const [errors, setErrors] = useState({});
+
+  const { mutate, data, isPending, isError, error } = useMutation({
+    mutationFn: (payload) => authService.registerUser(payload),
+  });
+
+  useEffect(() => {
+    if (data) {
+      toast.success(data.message);
+      navigate("/login");
+    }
+    if (isError && error) {
+      toast.error(error.response?.data?.message || "Something went wrong");
+    }
+  }, [data, isError, error, navigate]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -24,19 +42,19 @@ export default function Signup() {
 
     // Validate Full Name: 2-50 characters
     if (fullName.trim().length < 2 || fullName.trim().length > 50) {
-      newErrors.fullName = 'Full name must be between 2 and 50 characters';
+      newErrors.fullName = "Full name must be between 2 and 50 characters";
     }
 
     // Validate Email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email.trim() || !emailRegex.test(email.trim())) {
-      newErrors.email = 'Please enter a valid email address';
+      newErrors.email = "Please enter a valid email address";
     }
 
     // Validate Phone: exactly 10 digits
-    const phoneDigits = phone.replace(/\D/g, '');
+    const phoneDigits = phone.replace(/\D/g, "");
     if (phoneDigits.length !== 10) {
-      newErrors.phone = 'Phone number must be exactly 10 digits';
+      newErrors.phone = "Phone number must be exactly 10 digits";
     }
 
     // Validate Password: at least 8 characters with at least one letter and one number
@@ -44,16 +62,23 @@ export default function Signup() {
     const passwordHasNumber = /\d/.test(password);
     if (password.length < 8 || !passwordHasLetter || !passwordHasNumber) {
       newErrors.password =
-        'Password must be at least 8 characters with a letter and a number';
+        "Password must be at least 8 characters with a letter and a number";
     }
 
     setErrors(newErrors);
 
-    // If no errors, advance to onboarding
+    // If no errors, call register mutation
     if (Object.keys(newErrors).length === 0) {
-      navigate('/onboarding');
+      mutate({
+        name: fullName.trim(),
+        email: email.trim(),
+        phone: phoneDigits,
+        password,
+      });
     }
   };
+
+  if (isPending) return <LoaderScreen />;
 
   return (
     <AuthLayout>
@@ -78,7 +103,7 @@ export default function Signup() {
             value={fullName}
             onChange={(e) => {
               setFullName(e.target.value);
-              if (errors.fullName) setErrors({ ...errors, fullName: '' });
+              if (errors.fullName) setErrors({ ...errors, fullName: "" });
             }}
             errorText={errors.fullName}
           />
@@ -91,7 +116,7 @@ export default function Signup() {
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
-              if (errors.email) setErrors({ ...errors, email: '' });
+              if (errors.email) setErrors({ ...errors, email: "" });
             }}
             errorText={errors.email}
           />
@@ -105,7 +130,7 @@ export default function Signup() {
             value={phone}
             onChange={(e) => {
               setPhone(e.target.value);
-              if (errors.phone) setErrors({ ...errors, phone: '' });
+              if (errors.phone) setErrors({ ...errors, phone: "" });
             }}
             errorText={errors.phone}
           />
@@ -118,7 +143,7 @@ export default function Signup() {
             value={password}
             onChange={(e) => {
               setPassword(e.target.value);
-              if (errors.password) setErrors({ ...errors, password: '' });
+              if (errors.password) setErrors({ ...errors, password: "" });
             }}
             showPasswordToggle
             errorText={errors.password}
@@ -131,7 +156,7 @@ export default function Signup() {
 
         {/* Link to login */}
         <div className="text-center text-sm text-muted">
-          Already have an account?{' '}
+          Already have an account?{" "}
           <Link
             to="/login"
             className="text-[#0099FF] font-medium hover:underline outline-none"

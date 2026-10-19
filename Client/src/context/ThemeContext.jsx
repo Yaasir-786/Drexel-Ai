@@ -4,14 +4,14 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
-  // First visit is always Light (ignore OS setting) unless user previously chose dark
+  // First visit is Dark unless user chose light
   const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem("theme");
-    return saved === "dark" ? "dark" : "light";
+    const saved = localStorage.getItem("drexel-theme");
+    return saved === "light" ? "light" : "dark";
   });
 
   useEffect(() => {
-    localStorage.setItem("theme", theme);
+    localStorage.setItem("drexel-theme", theme);
     if (theme === "dark") {
       document.documentElement.classList.add("dark");
     } else {

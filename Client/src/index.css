@@ -23,7 +23,13 @@
   --muted: #6B7280;
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.35) transparent;
+}
+
 .dark {
+  color-scheme: dark;
   --page: #0A0A0B;
   --surface: #111113;
   --card: #16161A;

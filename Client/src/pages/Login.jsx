@@ -1,43 +1,60 @@
-// Login page with email and password fields, validation, and login error banner
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import AuthLayout from '../components/AuthLayout';
-import Logo from '../components/Logo';
-import TextField from '../components/TextField';
-import Button from '../components/Button';
-import { useAuth } from '../context/AuthContext';
+// Login page with email and password fields, validation, and backend auth integration
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
+import { useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import AuthLayout from "../components/AuthLayout";
+import Logo from "../components/Logo";
+import TextField from "../components/TextField";
+import Button from "../components/Button";
+import LoaderScreen from "../components/Loader";
+import authService from "../services/authService";
+import { register } from "../features/auth/authSlice";
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const dispatch = useDispatch();
 
   // Form states
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [emailError, setEmailError] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailError, setEmailError] = useState("");
 
-  // loginError state: empty by default; backend will fill it later
-  const [loginError, setLoginError] = useState('');
+  const { mutate, data, isPending, isError, isSuccess, error } = useMutation({
+    mutationFn: (payload) => authService.loginUser(payload),
+  });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    setEmailError('');
+    setEmailError("");
 
     // Simple validation: empty or invalid email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!email.trim()) {
-      setEmailError('Email is required');
+      setEmailError("Email is required");
       return;
     }
     if (!emailRegex.test(email)) {
-      setEmailError('Please enter a valid email address');
+      setEmailError("Please enter a valid email address");
       return;
     }
 
-    // Authenticate and navigate to Claude-inspired chat interface
-    login(email, password);
-    navigate('/chat');
+    mutate({ email, password });
   };
+
+  useEffect(() => {
+    if (data && isSuccess) {
+      toast.success("You Have Been LoggedIn..");
+      dispatch(register(data));
+      navigate(data.onboardingDone ? "/chat" : "/onboarding");
+    }
+    if (isError && error) {
+      toast.error(error.response?.data?.message || "Something went wrong");
+    }
+  }, [data, isSuccess, isError, error, dispatch, navigate]);
+
+  if (isPending) return <LoaderScreen />;
 
   return (
     <AuthLayout>
@@ -63,7 +80,7 @@ export default function Login() {
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
-              if (emailError) setEmailError('');
+              if (emailError) setEmailError("");
             }}
             errorText={emailError}
           />
@@ -77,30 +94,15 @@ export default function Login() {
             showPasswordToggle
           />
 
-          {/* Red banner for server error if present */}
-          {loginError && (
-            <div
-              role="alert"
-              className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-600 text-xs font-medium dark:bg-red-950/40 dark:border-red-900 dark:text-red-400"
-            >
-              {loginError}
-            </div>
-          )}
-
           {/* Submit button */}
           <Button type="submit" variant="primary" fullWidth className="mt-2">
             Log in
           </Button>
-
-          {/* Quick role hint */}
-          <p className="text-[11px] text-center text-muted mt-1">
-            Tip: Log in with <code className="text-ink">jane@example.com</code> for User or <code className="text-[#0099FF]">admin@example.com</code> for Admin
-          </p>
         </form>
 
         {/* Link to signup */}
         <div className="text-center text-sm text-muted">
-          New here?{' '}
+          New here?{" "}
           <Link
             to="/signup"
             className="text-[#0099FF] font-medium hover:underline outline-none"

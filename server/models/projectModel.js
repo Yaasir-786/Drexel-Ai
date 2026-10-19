@@ -49,6 +49,7 @@ const projectSchema = new mongoose.Schema(
       maxlength: 60,
       default: DEFAULT_PROJECT_NAME,
     },
+
     files: [fileSchema],
     versions: [versionSchema],
   },

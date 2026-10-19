@@ -111,6 +111,7 @@ export const normalizePlan = (raw, { hasFiles, fallback }) => {
     summary,
     complexity: plan.complexity === "large" ? "large" : "small",
     mode: hasFiles ? "edit" : "new",
+    preview: plan.preview !== false,
     pages: asList(plan.pages, 15, 80),
     components: asList(plan.components, 25, 80),
     steps: steps.length ? steps : [summary || "Build what the user asked for"],

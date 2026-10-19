@@ -142,6 +142,7 @@ export const runCoderAgent = async ({ plan, request, errorLog, files, signal, se
         role: "user",
         content: [
           `SECURITY_CHECK: ${securityOn ? "ON" : "OFF"}`,
+          `PREVIEW: ${plan.preview === false ? "false" : "true"}`,
           `PLAN SUMMARY: ${plan.summary}`,
           `FILES TO REVIEW:\n${reviewList
             .map((file) => `<file path="${file.path}">\n${file.content}\n</file>`)

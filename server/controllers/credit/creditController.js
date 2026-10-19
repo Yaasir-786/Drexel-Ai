@@ -6,10 +6,10 @@ const getUsage = async (req, res) => {
   const user = req.user;
 
   const chats = await Chat.find({ user: user._id })
-    .select("project creditsUsed tokensUsed messages.mode messages.agent messages.creditsUsed messages.tokensUsed messages.createdAt")
+    .select("project title creditsUsed tokensUsed messages.mode messages.agent messages.creditsUsed messages.tokensUsed messages.createdAt")
     .lean();
 
-  // credits spent per project
+  // credits spent per project / chat
   const byProject = chats
     .filter((chat) => chat.creditsUsed > 0)
     .sort((a, b) => b.creditsUsed - a.creditsUsed)
@@ -26,9 +26,15 @@ const getUsage = async (req, res) => {
     .slice(0, 20);
 
   const ids = [
-    ...new Set([...byProject.map((c) => String(c.project)), ...recent.map((m) => String(m.project))]),
+    ...new Set(
+      [...byProject.map((c) => c.project), ...recent.map((m) => m.project)]
+        .filter(Boolean)
+        .map(String),
+    ),
   ];
-  const projects = await Project.find({ _id: { $in: ids } }).select("name");
+  const projects = ids.length
+    ? await Project.find({ _id: { $in: ids } }).select("name")
+    : [];
   const names = new Map(projects.map((p) => [String(p._id), p.name]));
 
   const usedToday = user.dailyDate === credit.todayKey() ? user.dailyUsed : 0;
@@ -40,14 +46,14 @@ const getUsage = async (req, res) => {
     totalCreditsUsed: credit.round2(user.totalCreditsUsed),
     totalTokensUsed: user.totalTokensUsed,
     byProject: byProject.map((chat) => ({
-      projectId: chat.project,
-      name: names.get(String(chat.project)) || "Untitled Project",
+      projectId: chat.project || null,
+      name: chat.project ? (names.get(String(chat.project)) || "Untitled Project") : (chat.title || "Chat"),
       credits: credit.round2(chat.creditsUsed),
       tokens: chat.tokensUsed,
     })),
     recent: recent.map((message) => ({
-      projectId: message.project,
-      projectName: names.get(String(message.project)) || "Untitled Project",
+      projectId: message.project || null,
+      projectName: message.project ? (names.get(String(message.project)) || "Untitled Project") : "Chat",
       mode: message.mode,
       agent: message.agent,
       creditsUsed: credit.round2(message.creditsUsed),

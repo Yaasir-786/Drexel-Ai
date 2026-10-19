@@ -1,5 +1,5 @@
 // Sidebar navigation matching Stitch reference design system exactly
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Folder,
@@ -10,40 +10,53 @@ import {
   LogOut,
   Coins,
   Trash2,
+  MessageSquarePlus,
 } from 'lucide-react';
+import { useSelector, useDispatch } from 'react-redux';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Logo from '../Logo';
-import { useAuth } from '../../context/AuthContext';
-import { getSavedChats, deleteChat, createNewChat } from '../../utils/chatStorage';
+import { logoutUser } from '../../features/auth/authSlice';
+import projectService from '../../services/projectService';
+import chatService from '../../services/chatService';
 
 export default function Sidebar({ onItemClick }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, isAdmin } = useAuth();
-  const [chatList, setChatList] = useState([]);
+  const dispatch = useDispatch();
+  const queryClient = useQueryClient();
+  const { user } = useSelector((state) => state.auth);
+  const isAdmin = user?.userType === "ADMIN";
 
-  useEffect(() => {
-    setChatList(getSavedChats());
-  }, [location.pathname]);
+  const { data: chatList = [] } = useQuery({
+    queryKey: ["chats"],
+    queryFn: () => chatService.getChats(user?.token),
+    enabled: !!user?.token,
+  });
+
+  const deleteChatMutation = useMutation({
+    mutationFn: (chatId) => chatService.deleteChat(user?.token, chatId),
+    onSuccess: (_, chatId) => {
+      queryClient.invalidateQueries({ queryKey: ["chats"] });
+      if (location.pathname === `/chat/${chatId}`) {
+        navigate("/chat");
+      }
+    },
+  });
 
   const handleNewChat = () => {
-    const chat = createNewChat();
-    setChatList(getSavedChats());
     if (onItemClick) onItemClick();
-    navigate(`/chat/${chat.id}`);
+    navigate('/chat');
   };
 
   const handleDeleteChat = (e, chatId) => {
     e.preventDefault();
     e.stopPropagation();
-    const updated = deleteChat(chatId);
-    setChatList(updated);
-    if (location.pathname === `/chat/${chatId}`) {
-      navigate('/chat');
-    }
+    deleteChatMutation.mutate(chatId);
   };
 
   const handleLogout = () => {
-    logout();
+    localStorage.removeItem("user");
+    dispatch(logoutUser());
     if (onItemClick) onItemClick();
     navigate('/login');
   };
@@ -51,17 +64,26 @@ export default function Sidebar({ onItemClick }) {
   return (
     <aside
       aria-label="Sidebar navigation"
-      className="w-[264px] h-full bg-surface border-r border-line flex flex-col justify-between p-4 shrink-0 overflow-y-auto select-none [-webkit-tap-highlight-color:transparent]"
+      className="w-[264px] h-full bg-surface border-r border-line flex flex-col justify-between p-4 shrink-0 overflow-hidden select-none [-webkit-tap-highlight-color:transparent]"
     >
       {/* Top section: Logo, Action Buttons, Navigation */}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
         {/* Brand Logo */}
         <Link to="/chat" onClick={onItemClick} className="px-1 pt-1 block outline-none">
           <Logo />
         </Link>
 
-        {/* Primary Action Button: + New project matching reference design */}
+        {/* Action Buttons: New chat and New project */}
         <div className="flex flex-col gap-2 pt-1">
+          <button
+            type="button"
+            onClick={handleNewChat}
+            className="w-full h-10 rounded-xl border border-line bg-surface hover:bg-card text-ink font-medium text-sm transition-all flex items-center justify-center gap-2 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[#0099FF]"
+          >
+            <MessageSquarePlus size={18} />
+            <span>New chat</span>
+          </button>
+
           <Link
             to="/projects/new"
             onClick={onItemClick}
@@ -152,95 +174,93 @@ export default function Sidebar({ onItemClick }) {
           </div>
 
           {/* Admin Section */}
-          <div className="flex flex-col gap-1">
-            <span className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              ADMIN
-            </span>
+          {isAdmin && (
+            <div className="flex flex-col gap-1">
+              <span className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                ADMIN
+              </span>
 
-            {/* Admin */}
-            <Link
-              to="/admin"
-              onClick={onItemClick}
-              className={`h-10 px-3.5 rounded-xl flex items-center gap-3 text-sm font-medium transition-colors cursor-pointer outline-none select-none ${
-                location.pathname === '/admin'
-                  ? 'bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]'
-                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <Shield
-                size={18}
-                className={
+              {/* Admin */}
+              <Link
+                to="/admin"
+                onClick={onItemClick}
+                className={`h-10 px-3.5 rounded-xl flex items-center gap-3 text-sm font-medium transition-colors cursor-pointer outline-none select-none ${
                   location.pathname === '/admin'
-                    ? 'text-[#0066cc] dark:text-[#60a5fa]'
-                    : 'text-slate-700 dark:text-slate-300'
-                }
-              />
-              <span>Admin</span>
-            </Link>
-          </div>
+                    ? 'bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]'
+                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60'
+                }`}
+              >
+                <Shield
+                  size={18}
+                  className={
+                    location.pathname === '/admin'
+                      ? 'text-[#0066cc] dark:text-[#60a5fa]'
+                      : 'text-slate-700 dark:text-slate-300'
+                  }
+                />
+                <span>Admin</span>
+              </Link>
+            </div>
+          )}
         </nav>
 
-        {/* Recent Chats Section (if any chats exist) */}
-        {chatList.length > 0 && (
-          <div className="flex flex-col gap-1.5 mt-2 pt-3 border-t border-line">
-            <div className="flex items-center justify-between px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              <span>Recent Chats</span>
-              <button
-                type="button"
-                onClick={handleNewChat}
-                className="text-[11px] font-medium text-[#0066cc] hover:underline flex items-center gap-0.5"
-                title="Create new chat"
-              >
-                <Plus size={12} /> New
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-1 max-h-[140px] overflow-y-auto pr-0.5">
-              {chatList.map((chat) => {
-                const isChatActive =
-                  location.pathname === `/chat/${chat.id}` ||
-                  (location.pathname === '/chat' && chatList[0]?.id === chat.id);
-                return (
-                  <div
-                    key={chat.id}
-                    onClick={() => {
-                      if (onItemClick) onItemClick();
-                      navigate(`/chat/${chat.id}`);
-                    }}
-                    className={`group h-9 rounded-xl flex items-center justify-between text-xs font-medium cursor-pointer transition-colors outline-none select-none px-3 ${
-                      isChatActive
-                        ? 'bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]'
-                        : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60'
-                    }`}
-                  >
-                    <span className="truncate max-w-[165px]" title={chat.title}>
-                      {chat.title}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label="Delete chat"
-                      onClick={(e) => handleDeleteChat(e, chat.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 hover:bg-surface rounded transition-all"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+        {/* Recent Chats Section */}
+        <div className="flex flex-col gap-1.5 mt-2 pt-3 border-t border-line">
+          <div className="flex items-center justify-between px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            <span>Recent Chats</span>
+            <button
+              type="button"
+              onClick={handleNewChat}
+              className="text-[11px] font-medium text-[#0066cc] hover:underline flex items-center gap-0.5 cursor-pointer"
+              title="Create new chat"
+            >
+              <Plus size={12} /> New
+            </button>
           </div>
-        )}
+
+          <div className="flex flex-col gap-1 max-h-[140px] overflow-y-auto pr-0.5">
+            {chatList.map((chat) => {
+              const isChatActive = location.pathname === `/chat/${chat._id}`;
+              return (
+                <div
+                  key={chat._id}
+                  onClick={() => {
+                    if (onItemClick) onItemClick();
+                    navigate(`/chat/${chat._id}`);
+                  }}
+                  className={`group h-9 rounded-xl flex items-center justify-between text-xs font-medium cursor-pointer transition-colors outline-none select-none px-3 ${
+                    isChatActive
+                      ? 'bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <span className="truncate max-w-[165px]" title={chat.title || chat.name || "New chat"}>
+                    {chat.title || chat.name || "New chat"}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Delete chat"
+                    onClick={(e) => handleDeleteChat(e, chat._id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 hover:bg-surface rounded transition-all"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {/* Bottom section: Credits card and user profile */}
-      <div className="flex flex-col gap-3 pt-3 border-t border-line mt-3">
+      <div className="flex flex-col gap-3 pt-3 border-t border-line mt-3 shrink-0">
         {/* Credits Balance Card */}
         <div className="p-3 bg-card border border-line rounded-xl flex flex-col gap-2 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-medium text-muted">Credits balance</span>
             <span className="text-xs font-semibold text-ink flex items-center gap-1.5">
               <Coins size={14} className="text-[#0099FF]" />
-              {user?.credits || '178.6'} credits
+              {user?.credits ?? 0} credits
             </span>
           </div>
 
@@ -251,7 +271,7 @@ export default function Sidebar({ onItemClick }) {
 
           <div className="flex justify-between items-center text-[11px] text-muted">
             <span>42 / 100 used today</span>
-            {user?.role === 'ADMIN' && (
+            {isAdmin && (
               <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 font-bold uppercase tracking-wider">
                 Admin
               </span>
@@ -263,7 +283,7 @@ export default function Sidebar({ onItemClick }) {
         <div className="flex items-center justify-between pt-1 px-1">
           <div className="flex items-center gap-2.5 overflow-hidden">
             <div className="w-9 h-9 rounded-full bg-primary-gradient flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-xs">
-              {user?.initials || 'JD'}
+              {user?.name?.slice(0, 2).toUpperCase()}
             </div>
             <div className="truncate">
               <div className="text-xs font-semibold text-ink truncate leading-tight">

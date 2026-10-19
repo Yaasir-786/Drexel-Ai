@@ -11,14 +11,15 @@ import {
 } from 'lucide-react';
 import ThemeToggle from '../ThemeToggle';
 import Button from '../Button';
-import { useAuth } from '../../context/AuthContext';
+import { useSelector } from 'react-redux';
 
 export default function BuilderTopBar({
   projectName,
   onRenameProject,
   onOpenHistory,
+  onDownloadZip,
 }) {
-  const { user } = useAuth();
+  const { user } = useSelector((state) => state.auth);
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(projectName);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -41,7 +42,7 @@ export default function BuilderTopBar({
   };
 
   const handleDownloadZip = () => {
-    // TODO: connect to backend for real ZIP export
+    if (onDownloadZip) onDownloadZip();
   };
 
   return (
@@ -91,7 +92,7 @@ export default function BuilderTopBar({
         {/* Credits pill (ONE line) */}
         <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-line bg-surface text-xs font-medium text-ink whitespace-nowrap">
           <Coins size={14} className="text-[#0099FF] shrink-0" />
-          <span>{user?.credits || '178.6'} credits</span>
+          <span>{user?.credits ?? 0} credits</span>
         </div>
 
         {/* Desktop Buttons (768px and up) */}
