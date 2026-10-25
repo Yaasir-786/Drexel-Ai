@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Eye, Code2, Download, X } from "lucide-react";
 import PreviewPanel from "../builder/PreviewPanel";
 import CodePanel from "../builder/CodePanel";
@@ -14,7 +14,7 @@ export default function ArtifactPanel({
   onFixError,
 }) {
   const [activeTab, setActiveTab] = useState(preview ? (tab || "preview") : "code");
-  const map = Object.fromEntries(files.map((f) => [f.path, f.content]));
+  const map = useMemo(() => Object.fromEntries(files.map((f) => [f.path, f.content])), [files]);
 
   const displayName = file
     ? file.startsWith("/")
