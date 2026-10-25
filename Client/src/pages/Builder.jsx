@@ -14,6 +14,7 @@ import projectService, { mapMessages } from '../services/projectService';
 import agentService from '../services/agentService';
 import { getProfile } from '../features/auth/authSlice';
 import { downloadZip } from '../utils/downloadFiles';
+import { createTypewriter } from '../utils/typewriter';
 
 export default function Builder() {
   const { id } = useParams();
@@ -29,6 +30,7 @@ export default function Builder() {
   const [files, setFiles] = useState([]);
   const [hasGeneratedCode, setHasGeneratedCode] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isWritingFiles, setIsWritingFiles] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
@@ -45,7 +47,7 @@ export default function Builder() {
 
   // Fetch chat history if not "new"
   const { data: chatData } = useQuery({
-    queryKey: ["chat", id],
+    queryKey: ["projectChat", id],
     queryFn: () => projectService.getChat(user?.token, id),
     enabled: id !== "new" && !!user?.token && !!id,
   });
@@ -74,7 +76,7 @@ export default function Builder() {
 
   useEffect(() => {
     if (chatData) {
-      setMessages(mapMessages(chatData));
+      setMessages(mapMessages(chatData.messages));
     }
   }, [chatData]);
 
@@ -97,6 +99,7 @@ export default function Builder() {
 
     let projectId = currentProjectId;
     let isCreated = false;
+    let typer;
 
     try {
       if (id === "new" || !projectId) {
@@ -116,10 +119,28 @@ export default function Builder() {
       };
       setMessages((prev) => [...prev, userMsg]);
 
+      typer = createTypewriter((chunk) => {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.type === "assistant" && last.isStreaming) {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, text: last.text + chunk },
+            ];
+          }
+          return [
+            ...prev,
+            { type: "assistant", text: chunk, isStreaming: true },
+          ];
+        });
+      });
+
       const controller = new AbortController();
       controllerRef.current = controller;
       setIsGenerating(true);
-      setStatusMessage("Analyzing your request…");
+      setStatusMessage("Thinking…");
+
+      let doneData = null;
 
       await agentService.streamAgent({
         token: user?.token,
@@ -134,21 +155,13 @@ export default function Builder() {
         signal: controller.signal,
         onEvent: (event, data) => {
           if (event === "status") {
-            setStatusMessage(data.message);
+            setStatusMessage(
+              /review/i.test(data.message) ? "Reviewing changes…" : /coder|code/i.test(data.message) ? "Generating code…" : "Thinking…"
+            );
+          } else if (event === "file_start") {
+            setIsWritingFiles(true);
           } else if (event === "token") {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.type === "assistant" && last.isStreaming) {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, text: last.text + data.text },
-                ];
-              }
-              return [
-                ...prev,
-                { type: "assistant", text: data.text, isStreaming: true },
-              ];
-            });
+            typer.push(data.text);
           } else if (event === "credits") {
             if (data.credits != null) {
               dispatch(getProfile({ credits: data.credits }));
@@ -156,28 +169,35 @@ export default function Builder() {
           } else if (event === "error") {
             toast.error(data.message);
           } else if (event === "done") {
-            setIsGenerating(false);
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.isStreaming) {
-                return [...prev.slice(0, -1), { ...last, isStreaming: false }];
-              }
-              return prev;
-            });
-            if (isCreated) {
-              navigate(`/projects/${projectId}`, { replace: true });
-            }
-            queryClient.invalidateQueries({ queryKey: ["project", projectId] });
-            queryClient.invalidateQueries({ queryKey: ["chat", projectId] });
+            doneData = data;
           }
         },
       });
+
+      await typer.drain();
+
+      setIsGenerating(false);
+      setIsWritingFiles(false);
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.isStreaming) {
+          return [...prev.slice(0, -1), { ...last, isStreaming: false }];
+        }
+        return prev;
+      });
+      if (isCreated) {
+        navigate(`/projects/${projectId}`, { replace: true });
+      }
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["projectChat", projectId] });
     } catch (error) {
+      typer?.stop();
       if (error.name !== "AbortError") {
         toast.error(error.message || "Something went wrong");
       }
     } finally {
       setIsGenerating(false);
+      setIsWritingFiles(false);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.isStreaming) {
@@ -237,6 +257,7 @@ export default function Builder() {
                 onStopGenerating={handleStopGenerating}
                 activeMode="Build"
                 statusMessage={statusMessage}
+                isWritingFiles={isWritingFiles}
               />
             </div>
           </div>
@@ -253,6 +274,7 @@ export default function Builder() {
                 onStopGenerating={handleStopGenerating}
                 activeMode="Build"
                 statusMessage={statusMessage}
+                isWritingFiles={isWritingFiles}
               />
             </div>
 
@@ -294,12 +316,11 @@ export default function Builder() {
               </div>
 
               {/* Workspace Content */}
-              <div className="flex-1 min-h-0 overflow-hidden">
-                {activeTab === 'code' ? (
-                  <CodePanel files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} />
-                ) : (
-                  <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} onFixError={handleFixError} />
-                )}
+              <div className={activeTab === "preview" ? "h-full" : "hidden"}>
+                <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} onFixError={handleFixError} />
+              </div>
+              <div className={activeTab === "code" ? "h-full" : "hidden"}>
+                <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} />
               </div>
             </div>
           </div>

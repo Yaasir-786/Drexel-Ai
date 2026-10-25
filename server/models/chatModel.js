@@ -63,8 +63,6 @@ const chatSchema = new mongoose.Schema(
     project: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Project",
-      unique: true,
-      sparse: true,
     },
     title: {
       type: String,
@@ -96,6 +94,11 @@ const chatSchema = new mongoose.Schema(
   {
     timestamps: true,
   },
+);
+
+chatSchema.index(
+  { project: 1 },
+  { unique: true, partialFilterExpression: { project: { $type: "objectId" } } },
 );
 
 const Chat = mongoose.model("Chat", chatSchema);

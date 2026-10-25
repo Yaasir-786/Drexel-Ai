@@ -14,6 +14,7 @@ import {
   FolderPlus,
   ArrowRight,
   X,
+  Eye,
 } from "lucide-react";
 import Sidebar from "../components/layout/Sidebar";
 import ThemeToggle from "../components/ThemeToggle";
@@ -26,6 +27,8 @@ import ArtifactCard from "../components/chat/ArtifactCard";
 import ArtifactPanel from "../components/chat/ArtifactPanel";
 import { downloadZip } from "../utils/downloadFiles";
 import { getProfile } from "../features/auth/authSlice";
+import { createTypewriter } from "../utils/typewriter";
+import RunStatus from "../components/RunStatus";
 
 const PROMPT_SUGGESTIONS = [
   {
@@ -67,12 +70,13 @@ export default function Chat() {
   const [preview, setPreview] = useState(true);
   const [chatTitle, setChatTitle] = useState("New chat");
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
-  const [artifactTab, setArtifactTab] = useState("preview");
+  const [artifactChatId, setArtifactChatId] = useState(null);
   const [artifactFile, setArtifactFile] = useState(null);
 
   const [inputPrompt, setInputPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState("Analyzing your request…");
+  const [isWritingFiles, setIsWritingFiles] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState("Thinking…");
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -100,6 +104,7 @@ export default function Chat() {
       setPreview(true);
       setChatTitle("New chat");
       setArtifactPanelOpen(false);
+      setArtifactChatId(null);
     }
     return () => {
       controllerRef.current?.abort();
@@ -107,7 +112,7 @@ export default function Chat() {
   }, [id, chatData]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [messages, isGenerating]);
 
   const handleFileSelect = (e) => {
@@ -126,21 +131,17 @@ export default function Chat() {
     setAttachments(attachments.filter((_, i) => i !== index));
   };
 
-  const handleSendPrompt = async (textToSend) => {
-    const query = textToSend || inputPrompt;
-    if (!query.trim() || isGenerating) return;
-
-    const text = query.trim();
-    setInputPrompt("");
-    setAttachments([]);
+  const runStream = async ({ message, type = "prompt", errorLog = "" }) => {
+    if ((!message?.trim() && type !== "fix") || isGenerating) return;
 
     let chatId = currentChatId;
     let isNewChat = false;
+    let typer;
 
     try {
       if (!chatId) {
         const newChat = await chatService.createChat(user?.token, {
-          title: text.slice(0, 40),
+          title: (message || "New chat").slice(0, 40),
         });
         chatId = newChat._id;
         setCurrentChatId(chatId);
@@ -150,41 +151,53 @@ export default function Chat() {
 
       const userMessage = {
         type: "user",
-        text,
+        text: type === "fix" ? "Fix preview error" : message,
         attachments: [],
       };
       setMessages((prev) => [...prev, userMessage]);
 
+      typer = createTypewriter((chunk) => {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.type === "assistant" && last.isStreaming) {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, text: last.text + chunk },
+            ];
+          }
+          return [
+            ...prev,
+            { type: "assistant", text: chunk, isStreaming: true },
+          ];
+        });
+      });
+
       const controller = new AbortController();
       controllerRef.current = controller;
       setIsGenerating(true);
-      setProcessingStatus("Analyzing your request…");
+      setProcessingStatus("Thinking…");
+
+      let doneData = null;
 
       await agentService.streamAgent({
         token: user?.token,
         body: {
           chatId,
-          message: text,
-          mode: "chat",
+          message: message || "",
+          mode: type === "fix" ? "build" : "chat",
+          type,
+          errorLog,
         },
         signal: controller.signal,
         onEvent: (event, data) => {
           if (event === "status") {
-            setProcessingStatus(data.message);
+            setProcessingStatus(
+              /review/i.test(data.message) ? "Reviewing changes…" : /coder|code/i.test(data.message) ? "Generating code…" : "Thinking…"
+            );
+          } else if (event === "file_start") {
+            setIsWritingFiles(true);
           } else if (event === "token") {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.type === "assistant" && last.isStreaming) {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, text: last.text + data.text },
-                ];
-              }
-              return [
-                ...prev,
-                { type: "assistant", text: data.text, isStreaming: true },
-              ];
-            });
+            typer.push(data.text);
           } else if (event === "credits") {
             if (data.credits != null) {
               dispatch(getProfile({ credits: data.credits }));
@@ -192,29 +205,43 @@ export default function Chat() {
           } else if (event === "error") {
             toast.error(data.message);
           } else if (event === "done") {
-            setIsGenerating(false);
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.isStreaming) {
-                return [...prev.slice(0, -1), { ...last, isStreaming: false }];
-              }
-              return prev;
-            });
-            if (data.changedFiles && data.changedFiles.length > 0) {
-              queryClient.invalidateQueries({ queryKey: ["chat", chatId] });
-            }
-            if (isNewChat) {
-              navigate(`/chat/${chatId}`, { replace: true });
-            }
+            doneData = data;
           }
         },
       });
+
+      await typer.drain();
+
+      setIsGenerating(false);
+      setIsWritingFiles(false);
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.isStreaming) {
+          return [...prev.slice(0, -1), { ...last, isStreaming: false }];
+        }
+        return prev;
+      });
+
+      if (doneData?.changedFiles && doneData.changedFiles.length > 0) {
+        await queryClient.invalidateQueries({ queryKey: ["chat", chatId] });
+        const fresh = queryClient.getQueryData(["chat", chatId]);
+        if (fresh?.preview !== false) {
+          setArtifactChatId(chatId);
+          setArtifactPanelOpen(true);
+        }
+      }
+
+      if (isNewChat) {
+        navigate(`/chat/${chatId}`, { replace: true });
+      }
     } catch (error) {
+      typer?.stop();
       if (error.name !== "AbortError") {
         toast.error(error.message || "Something went wrong");
       }
     } finally {
       setIsGenerating(false);
+      setIsWritingFiles(false);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.isStreaming) {
@@ -223,6 +250,14 @@ export default function Chat() {
         return prev;
       });
     }
+  };
+
+  const handleSendPrompt = (textToSend) => {
+    const text = (textToSend || inputPrompt)?.trim();
+    if (!text) return;
+    setInputPrompt("");
+    setAttachments([]);
+    runStream({ message: text });
   };
 
   // Find last build or assistant message to place ArtifactCard under
@@ -240,6 +275,10 @@ export default function Chat() {
     }
     return -1;
   })();
+
+  const lastMessage = messages[messages.length - 1];
+  const showStatus = isGenerating && (!lastMessage?.isStreaming || isWritingFiles);
+  const label = isWritingFiles || /code|review/i.test(processingStatus) ? "Running a command" : "Thinking";
 
   return (
     <div className="h-screen bg-page text-ink flex overflow-hidden">
@@ -289,6 +328,20 @@ export default function Chat() {
 
             {/* Right Header: Credits pill, Theme toggle, Avatar */}
             <div className="flex items-center gap-3">
+              {files.length > 0 && preview && !artifactPanelOpen && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setArtifactChatId(id);
+                    setArtifactPanelOpen(true);
+                  }}
+                  icon={Eye}
+                  className="h-8 px-3 text-xs"
+                >
+                  Preview
+                </Button>
+              )}
+
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-line bg-surface text-xs font-medium text-ink whitespace-nowrap">
                 <Coins size={14} className="text-[#0099FF] shrink-0" />
                 <span>{user?.credits ?? 0} credits</span>
@@ -365,10 +418,10 @@ export default function Chat() {
                           )}
 
                           <div
-                            className={`rounded-2xl p-4 text-xs md:text-sm shadow-xs ${
+                            className={`${
                               isUser
-                                ? "bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white whitespace-pre-wrap"
-                                : "bg-card border border-line text-ink leading-relaxed"
+                                ? "rounded-2xl p-4 text-xs md:text-sm shadow-xs bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white whitespace-pre-wrap"
+                                : "min-w-0 pt-1 text-xs md:text-sm text-ink leading-relaxed"
                             }`}>
                             {isUser && msg.attachments?.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 mb-2 pb-2 border-b border-white/20">
@@ -392,14 +445,14 @@ export default function Chat() {
                         </div>
 
                         {/* ArtifactCard under last build message */}
-                        {!isUser && index === targetCardIndex && files.length > 0 && (
+                        {!isUser && index === targetCardIndex && files.length > 0 && preview === false && (
                           <div className="w-full max-w-[95%] pl-11">
                             <ArtifactCard
                               files={files}
                               preview={preview}
                               onOpen={(tab, filePath) => {
-                                setArtifactTab(tab);
                                 setArtifactFile(filePath || null);
+                                setArtifactChatId(id);
                                 setArtifactPanelOpen(true);
                               }}
                               onDownloadZip={() => downloadZip(files, chatTitle)}
@@ -411,17 +464,12 @@ export default function Chat() {
                   })}
 
                   {/* Status indicator during AI generation */}
-                  {isGenerating && (
+                  {showStatus && (
                     <div className="self-start max-w-[95%] flex gap-3.5 items-center">
-                      <div className="w-8 h-8 rounded-xl bg-primary-gradient flex items-center justify-center text-white shrink-0 shadow-xs">
-                        <Sparkles size={16} className="animate-spin" />
+                      <div className="w-8 h-8 flex items-center justify-center text-muted shrink-0">
+                        <Sparkles size={16} className="text-emerald-500" />
                       </div>
-                      <div className="px-3.5 py-2 rounded-2xl bg-card border border-line text-xs text-muted flex items-center gap-2 shadow-xs">
-                        <span className="w-2 h-2 rounded-full bg-[#0099FF] animate-pulse" />
-                        <span className="font-medium text-ink">
-                          {processingStatus}
-                        </span>
-                      </div>
+                      <RunStatus label={label} />
                     </div>
                   )}
                   <div ref={messagesEndRef} />
@@ -522,15 +570,21 @@ export default function Chat() {
         </div>
 
         {/* ArtifactPanel opens on the right */}
-        {artifactPanelOpen && files.length > 0 && (
+        {artifactPanelOpen && artifactChatId === id && files.length > 0 && (
           <ArtifactPanel
             files={files}
             preview={preview}
-            tab={artifactTab}
+            tab="preview"
             file={artifactFile}
             title={chatTitle}
             onClose={() => setArtifactPanelOpen(false)}
-            onFixError={(err) => handleSendPrompt(`Fix error: ${err}`)}
+            onFixError={(err) =>
+              runStream({
+                message: "The live preview shows an error. Find the cause and fix it.",
+                type: "fix",
+                errorLog: err,
+              })
+            }
           />
         )}
       </div>

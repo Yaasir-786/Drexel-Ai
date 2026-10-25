@@ -1,4 +1,4 @@
-# delux.ai (backend)
+# Drexel-Ai (backend)
 
 AI app builder backend. Express 5 + MongoDB (Mongoose) + JWT (Bearer token) + 2 AI agents (Planner, Coder).
 
@@ -6,7 +6,7 @@ AI app builder backend. Express 5 + MongoDB (Mongoose) + JWT (Bearer token) + 2 
 
 ```bash
 npm install
-cp .env.example .env      # fill MONGO_URI, JWT_SECRET, LLM_API_KEY, CLOUDINARY_*, SMTP_*
+cp .env.example .env      # fill MONGO_URI, JWT_SECRET, LLM_API_KEY, CLOUDINARY_*
 npm run seed              # creates the admin user (ADMIN_EMAIL / ADMIN_PASSWORD)
 npm run dev               # http://localhost:5000
 ```
@@ -28,8 +28,6 @@ The token is returned by `/auth/signup` and `/auth/login` (and `/auth/password`)
 | POST | `/auth/login` | Public | Login user/admin (returns token) |
 | GET | `/auth/me` | User | Current user |
 | PUT | `/auth/password` | User | Change password (returns new token) |
-| POST | `/auth/forgot-password` | Public | Send reset email |
-| POST | `/auth/reset-password/:token` | Public | Set new password |
 | POST | `/users/onboarding` | User | name, role, goal, teamSize |
 | PATCH | `/users/profile` | User | Update name / onboarding fields |
 | GET | `/credits/usage` | User | Balance, daily usage, spending per project |
@@ -84,15 +82,15 @@ Generated projects are Vite + React + Tailwind (CDN). Use Sandpack template `vit
 ## Folder structure
 
 ```
-delux-ai/
+Drexel-Ai/
 ├── package.json, seed.js, .env.example, .gitignore
 └── server/
     ├── server.js
-    ├── config/        dbConfig, cloudinaryConfig, mailConfig
+    ├── config/        dbConfig, cloudinaryConfig
     ├── models/        userModel, projectModel, chatModel
     ├── routes/        auth, user, credit, project, chat, agent, upload, admin, health
     ├── controllers/   <domain>/<domain>Controller.js
     ├── middleware/    auth, errorHandler, rateLimit, validate, credit,
-    │                  fileUpload, fileScan, cloudinary, email
+    │                  fileUpload, fileScan, cloudinary
     └── agents/        plannerAgent, coderAgent, prompts, llmClient, fileParser
 ```

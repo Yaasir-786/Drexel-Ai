@@ -1,7 +1,7 @@
 {
-  "name": "delux-ai",
+  "name": "Drexel-Ai",
   "version": "1.0.0",
-  "description": "delux.ai - AI powered full stack app builder (backend)",
+  "description": "Drexel-Ai - AI powered full stack app builder (backend)",
   "main": "server/server.js",
   "type": "module",
   "scripts": {

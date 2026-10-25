@@ -86,17 +86,18 @@ export default function ArtifactPanel({
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-hidden bg-surface">
-        {activeTab === "preview" && preview ? (
-          <PreviewPanel files={map} onFixError={onFixError} />
-        ) : (
-          <CodePanel
-            readOnly
-            key={file || "all"}
-            files={file ? { [file]: map[file] || "" } : map}
-            initialFile={file}
-          />
-        )}
-      </div>
+              <div className={activeTab === "preview" ? "h-full" : "hidden"}>
+                <PreviewPanel files={map} onFixError={onFixError} />
+              </div>
+              <div className={activeTab === "code" ? "h-full" : "hidden"}>
+                <CodePanel
+                  readOnly
+                  key={file || "all"}
+                  files={file ? { [file]: map[file] || "" } : map}
+                  initialFile={file}
+                />
+              </div>
+            </div>
     </div>
   );
 }

@@ -55,6 +55,7 @@ export default function Sidebar({ onItemClick }) {
   };
 
   const handleLogout = () => {
+    queryClient.clear();
     localStorage.removeItem("user");
     dispatch(logoutUser());
     if (onItemClick) onItemClick();

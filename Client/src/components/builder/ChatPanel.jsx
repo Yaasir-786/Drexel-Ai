@@ -10,6 +10,7 @@ import {
 import Button from '../Button';
 import Badge from '../Badge';
 import ChatMessageContent from '../ChatMessageContent';
+import RunStatus from '../RunStatus';
 
 export default function ChatPanel({
   messages = [],
@@ -20,42 +21,21 @@ export default function ChatPanel({
   activeMode = 'Build',
   onModeChange,
   statusMessage,
+  isWritingFiles = false,
 }) {
   const [inputText, setInputText] = useState('');
   const [mode, setMode] = useState(activeMode); // 'Chat' or 'Build'
   const [attachments, setAttachments] = useState([]);
-  const [processingStatus, setProcessingStatus] = useState('Analyzing your request…');
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Status progression during generation: Analyzing -> Thinking -> Generating code -> Reviewing changes
-  useEffect(() => {
-    if (!isGenerating) {
-      setProcessingStatus('Analyzing your request…');
-      return;
-    }
-
-    const steps = [
-      { time: 0, text: 'Analyzing your request…' },
-      { time: 550, text: 'Thinking…' },
-      { time: 1150, text: 'Generating code…' },
-      { time: 1800, text: 'Reviewing changes…' },
-    ];
-
-    const timers = steps.slice(1).map(({ time, text }) =>
-      setTimeout(() => {
-        setProcessingStatus(text);
-      }, time)
-    );
-
-    return () => {
-      timers.forEach(clearTimeout);
-    };
-  }, [isGenerating]);
+  const lastMessage = messages[messages.length - 1];
+  const showStatus = isGenerating && (!lastMessage?.isStreaming || isWritingFiles);
+  const label = isWritingFiles || /code|review/i.test(statusMessage) ? "Running a command" : "Thinking";
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isGenerating, processingStatus]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+  }, [messages, isGenerating]);
 
   const handleModeToggle = (newMode) => {
     setMode(newMode);
@@ -150,7 +130,7 @@ export default function ChatPanel({
                   <div className="w-8 h-8 rounded-xl bg-primary-gradient flex items-center justify-center text-white shrink-0 mt-0.5 shadow-xs">
                     <Sparkles size={16} />
                   </div>
-                  <div className="flex-1 bg-surface border border-line rounded-2xl p-4 text-xs text-ink shadow-xs leading-relaxed">
+                  <div className="flex-1 min-w-0 pt-1 text-xs text-ink leading-relaxed">
                     <ChatMessageContent content={responseText} />
                   </div>
                 </div>
@@ -162,17 +142,12 @@ export default function ChatPanel({
         )}
 
         {/* Clean, user-friendly status message based on current processing state */}
-        {isGenerating && (
+        {showStatus && (
           <div className="self-start max-w-[95%] flex gap-3 items-center pt-1">
-            <div className="w-8 h-8 rounded-xl bg-primary-gradient flex items-center justify-center text-white shrink-0 shadow-xs">
-              <Sparkles size={16} className="animate-spin" />
+            <div className="w-8 h-8 flex items-center justify-center text-muted shrink-0">
+              <Sparkles size={16} className="text-emerald-500" />
             </div>
-            <div className="px-3.5 py-2 rounded-2xl bg-surface border border-line text-xs text-muted flex items-center gap-2 shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-[#0099FF] animate-pulse" />
-              <span className="font-medium text-ink">
-                {statusMessage || processingStatus}
-              </span>
-            </div>
+            <RunStatus label={label} />
           </div>
         )}
         <div ref={messagesEndRef} />

@@ -1,57 +1,67 @@
 // PreviewPanel component: Sandpack live preview sandbox and error fix handler
-import React from 'react';
+import React, { useMemo } from 'react';
 import { SandpackProvider, SandpackPreview, useSandpack } from '@codesandbox/sandpack-react';
-import { RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
+import { Sparkles, AlertCircle } from 'lucide-react';
 import Button from '../Button';
+
+const buildPreviewSetup = (files) => {
+  let pkg = {};
+  try { pkg = JSON.parse(files["/package.json"] || "{}"); } catch { pkg = {}; }
+  const dependencies = { ...(pkg.dependencies || {}) };
+  ["react", "react-dom", "vite", "@vitejs/plugin-react"].forEach((name) => delete dependencies[name]);
+  const { "/package.json": removedPackage, "/vite.config.js": removedConfig, "/index.html": html = "", ...rest } = files;
+  const publicHtml = html.replace(/<script[^>]*type=["']module["'][^>]*>\s*<\/script>/gi, "");
+  return { files: { ...rest, ...(publicHtml && { "/public/index.html": publicHtml }) }, dependencies };
+};
 
 function SandpackContent({ onFixError }) {
   const { sandpack } = useSandpack();
   const errorMessage = sandpack.error?.message;
 
-  const handleRefresh = () => {
-    sandpack.dispatch({ type: 'refresh' });
-  };
+  // Status-based overlay content
+  const status = sandpack.status;
+
+  // Top center loading/text messages (absolute positioned, no background)
+  const statusOverlay = (
+    <div className="absolute top-0 left-0 right-0 z-10 pointer-events-none p-2">
+      {status === "initial" || status === "idle" || status === "running" && (
+        <span className="text-xs text-muted">Loading preview…</span>
+      )}
+    </div>
+  );
+
+  // Timeout box - absolute centered
+  const timeoutBox = sandpack.status === "timeout" && (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-surface text-ink p-6 text-sm">
+      <p className="text-center text-sm">
+        Preview could not start. The Sandpack bundler (CodeSandbox) is not reachable from your network. Check your internet, turn off VPN/ad-blocker or try another network, then press Refresh.
+      </p>
+      <Button
+        variant="secondary"
+        onClick={() => sandpack.dispatch?.({ type: "refresh" })}
+        className="mt-3 px-4 py-1.5 text-xs"
+      >
+        Refresh
+      </Button>
+    </div>
+  );
 
   return (
-    <>
-      {/* Browser Preview Frame */}
-      <div className="flex-1 rounded-xl border border-line bg-card flex flex-col overflow-hidden shadow-xs">
-        {/* Frame Browser Bar */}
-        <div className="h-10 border-b border-line bg-surface/70 px-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <div className="ml-3 px-3 py-1 rounded-md bg-card border border-line text-[11px] font-mono text-muted">
-              https://app-preview.drexel.internal
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-muted">
-            <button
-              type="button"
-              onClick={handleRefresh}
-              aria-label="Refresh preview"
-              className="p-1 rounded hover:text-ink cursor-pointer"
-              title="Refresh preview"
-            >
-              <RefreshCw size={14} />
-            </button>
-          </div>
-        </div>
-
-        {/* Live Sandpack Preview */}
-        <div className="flex-1 w-full h-full relative">
-          <SandpackPreview
-            showOpenInCodeSandbox={false}
-            showRefreshButton={false}
-            style={{ width: '100%', height: '100%' }}
-          />
-        </div>
+    <div className="h-full flex flex-col relative">
+      <div className="flex-1 min-h-0">
+        <SandpackPreview
+          showOpenInCodeSandbox={false}
+          showRefreshButton={false}
+          style={{ width: "100%", height: "100%" }}
+        />
       </div>
+
+      {statusOverlay}
+      {timeoutBox}
 
       {/* Dynamic Error Bar */}
       {errorMessage && (
-        <div className="h-12 px-4 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 flex items-center justify-between shrink-0">
+        <div className="h-12 px-4 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 flex items-center justify-between shrink-0 m-2">
           <div className="flex items-center gap-2 text-xs text-red-700 dark:text-red-400 font-mono truncate mr-2">
             <AlertCircle size={16} className="shrink-0" />
             <span className="truncate">Preview error: {errorMessage}</span>
@@ -65,12 +75,14 @@ function SandpackContent({ onFixError }) {
           </Button>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
 export default function PreviewPanel({ files = {}, onFixError, isNew = false }) {
-  if (isNew || !files || Object.keys(files).length === 0) {
+  const setup = useMemo(() => buildPreviewSetup(files), [files]);
+
+  if (isNew || !files || !files["/src/main.jsx"]) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-surface text-muted">
         <Sparkles size={32} className="text-[#0099FF] mb-2" />
@@ -83,14 +95,13 @@ export default function PreviewPanel({ files = {}, onFixError, isNew = false }) 
   }
 
   return (
-    <div className="h-full p-4 flex flex-col gap-3 bg-surface overflow-hidden">
+    <div className="h-full flex flex-col bg-surface overflow-hidden">
       <SandpackProvider
-        template="vite-react"
-        files={files}
-        options={{
-          recompileMode: 'delayed',
-          recompileDelay: 500,
-        }}
+        template="react"
+        files={setup.files}
+        customSetup={{ entry: "/src/main.jsx", dependencies: setup.dependencies }}
+        options={{ recompileMode: "delayed", recompileDelay: 500, bundlerTimeOut: 30000 }}
+        style={{ height: "100%", width: "100%" }}
       >
         <SandpackContent onFixError={onFixError} />
       </SandpackProvider>
