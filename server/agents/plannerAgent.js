@@ -103,11 +103,13 @@ export const normalizePlan = (raw, { hasFiles, fallback }) => {
       ? plan.summary.trim().slice(0, 500)
       : fallback.slice(0, 500);
 
+  const projectName =
+    typeof plan.projectName === "string" ? plan.projectName.trim().slice(0, 60) : "";
+
   return {
-    projectName:
-      typeof plan.projectName === "string"
-        ? plan.projectName.trim().slice(0, 60)
-        : "",
+    projectName: projectName
+      ? projectName.charAt(0).toUpperCase() + projectName.slice(1)
+      : "",
     summary,
     complexity: plan.complexity === "large" ? "large" : "small",
     mode: hasFiles && plan.mode !== "new" ? "edit" : "new",

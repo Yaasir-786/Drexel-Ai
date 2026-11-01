@@ -27,6 +27,8 @@ import { downloadZip } from "../utils/downloadFiles";
 import { getProfile } from "../features/auth/authSlice";
 import { createTypewriter } from "../utils/typewriter";
 import RunStatus from "../components/RunStatus";
+import PromptGlow from "../components/PromptGlow";
+import Greeting from "../components/Greeting";
 
 export default function Chat() {
   const { id } = useParams();
@@ -113,7 +115,7 @@ export default function Chat() {
     try {
       if (!chatId) {
         const newChat = await chatService.createChat(user?.token, {
-          title: (message || "New chat").slice(0, 40),
+          title: "New chat",
         });
         chatId = newChat._id;
         setCurrentChatId(chatId);
@@ -176,8 +178,22 @@ export default function Chat() {
             }
           } else if (event === "error") {
             toast.error(data.message);
+          } else if (event === "title") {
+            if (data.title) {
+              setChatTitle(data.title);
+              queryClient.setQueryData(["chats"], (old = []) =>
+                old.map((c) =>
+                  c._id === data.chatId ? { ...c, title: data.title } : c,
+                ),
+              );
+              queryClient.setQueryData(["chat", chatId], (old) =>
+                old ? { ...old, title: data.title } : old,
+              );
+              queryClient.invalidateQueries({ queryKey: ["chats"] });
+            }
           } else if (event === "done") {
             doneData = data;
+            queryClient.invalidateQueries({ queryKey: ["chats"] });
           }
         },
       });
@@ -349,13 +365,7 @@ export default function Chat() {
                       style={{ filter: "drop-shadow(0 0 8px rgba(59,140,255,0.55))" }}
                     />
                   </div>
-                  <h1 className="relative font-serif text-2xl md:text-3xl font-bold tracking-tight text-ink">
-                    How can I help you build today?
-                  </h1>
-                  <p className="relative font-serif text-base text-muted mt-2 max-w-md">
-                    Ask programming questions, request architecture plans, or generate
-                    reusable React components and Tailwind snippets.
-                  </p>
+                  <Greeting />
                 </div>
               ) : (
                 <div className="flex flex-col gap-6 py-4">
@@ -435,7 +445,8 @@ export default function Chat() {
           </div>
 
           {/* Pinned Bottom Input Card */}
-          <div className="p-3 md:p-4 bg-page flex justify-center shrink-0">
+          <div className="px-4 md:px-6 pt-4 pb-5 bg-page flex justify-center shrink-0">
+            <PromptGlow rounded="2xl" active={isGenerating} className="max-w-[800px]">
             <div className="w-full max-w-[800px] bg-card border border-line focus-within:border-[#0099FF] rounded-2xl p-2.5 md:p-3 shadow-md transition-colors flex flex-col">
               {/* Attached file chips */}
               {attachments.length > 0 && (
@@ -522,6 +533,7 @@ export default function Chat() {
                 )}
               </div>
             </div>
+            </PromptGlow>
           </div>
         </div>
 

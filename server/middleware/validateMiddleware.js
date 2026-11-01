@@ -95,7 +95,6 @@ const schemas = {
 
   updateProfile: z.object({
     name: nameField.optional(),
-    phone: phoneField.optional(),
     role: z.string().trim().min(1).max(50).optional(),
     goal: z.string().trim().min(1).max(300).optional(),
     teamSize: z.string().trim().min(1).max(30).optional(),

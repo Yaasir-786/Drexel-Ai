@@ -21,7 +21,7 @@ import chatService from "../../services/chatService";
 import useUsage from "../../hooks/useUsage";
 
 const navClass = (active) =>
-  `w-full h-10 px-3.5 rounded-xl flex items-center gap-3 text-[15px] font-medium cursor-pointer outline-none select-none text-left ${active ? "bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]" : "text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60"}`;
+  `w-full h-10 px-3.5 rounded-xl flex items-center gap-3 text-[15px] font-medium cursor-pointer outline-none select-none text-left ${active ? "bg-[#0099FF]/12 text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]" : "text-ink hover:bg-card dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60"}`;
 
 export default function Sidebar({ onItemClick }) {
   const location = useLocation();
@@ -64,7 +64,7 @@ export default function Sidebar({ onItemClick }) {
     localStorage.removeItem("user");
     dispatch(logoutUser());
     if (onItemClick) onItemClick();
-    navigate("/login");
+    navigate("/landing");
   };
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -77,10 +77,10 @@ export default function Sidebar({ onItemClick }) {
     const onKey = (event) => {
       if (event.key === "Escape") setMenuOpen(false);
     };
-    document.addEventListener("mousedown", close);
+    document.addEventListener("click", close);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", close);
+      document.removeEventListener("click", close);
       document.removeEventListener("keydown", onKey);
     };
   }, []);
@@ -130,7 +130,7 @@ export default function Sidebar({ onItemClick }) {
 
         {/* Recent Chats Section */}
         <div className="flex flex-col gap-1.5 mt-2 pt-3 border-t border-line flex-1 min-h-0">
-          <div className="flex items-center justify-between px-3 text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          <div className="flex items-center justify-between px-3 text-xs font-bold uppercase tracking-wider text-muted dark:text-slate-500">
             <span>Recent Chats</span>
             <button
               type="button"
@@ -153,13 +153,23 @@ export default function Sidebar({ onItemClick }) {
                   }}
                   className={`group h-10 rounded-xl flex items-center justify-between text-[15px] font-medium cursor-pointer transition-colors outline-none select-none px-3 ${
                     isChatActive
-                      ? "bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]"
-                      : "text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60"
+                      ? "bg-[#0099FF]/12 text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]"
+                      : "text-ink hover:bg-card dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60"
                   }`}>
-                  <span
-                    className="truncate flex-1 min-w-0"
-                    title={chat.title || chat.name || "New chat"}>
-                    {chat.title || chat.name || "New chat"}
+                  <span className="flex items-center gap-3 flex-1 min-w-0">
+                    <span
+                      aria-hidden="true"
+                      className={`w-1.5 h-1.5 rounded-full border-[1.5px] shrink-0 transition-colors ${
+                        isChatActive
+                          ? "border-[#0099FF]"
+                          : "border-muted group-hover:border-ink"
+                      }`}
+                    />
+                    <span
+                      className="truncate min-w-0 font-dm text-sm"
+                      title={chat.title || chat.name || "New chat"}>
+                      {chat.title || chat.name || "New chat"}
+                    </span>
                   </span>
                   <button
                     type="button"
@@ -210,26 +220,28 @@ export default function Sidebar({ onItemClick }) {
               </span>
             </div>
 
-            <Link
-              to="/settings"
+            <button
+              type="button"
               onClick={() => {
+                navigate("/settings");
                 setMenuOpen(false);
                 if (onItemClick) onItemClick();
               }}
               className={navClass(location.pathname === "/settings")}>
               <Settings size={18} />
               <span>Settings</span>
-            </Link>
-            <Link
-              to="/usage"
+            </button>
+            <button
+              type="button"
               onClick={() => {
+                navigate("/usage");
                 setMenuOpen(false);
                 if (onItemClick) onItemClick();
               }}
               className={navClass(location.pathname === "/usage")}>
               <BarChart2 size={18} />
               <span>Usage</span>
-            </Link>
+            </button>
             <div className="h-px bg-line my-1" />
             <button
               type="button"

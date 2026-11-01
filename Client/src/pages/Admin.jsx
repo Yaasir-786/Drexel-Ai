@@ -1,5 +1,5 @@
 // Admin dashboard page: system stat cards, searchable users table, drawer, and modals
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Users,
   UserX,
@@ -17,72 +17,173 @@ import UsersTable from '../components/admin/UsersTable';
 import UserDrawer from '../components/admin/UserDrawer';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import adminService from '../services/adminService';
+import { logoutUser } from '../features/auth/authSlice';
 
-// MOCK DATA: replace with API data later
-const INITIAL_USERS = [
-  { id: 'u1', name: 'Alex Rivera', email: 'alex@example.com', initials: 'AR', role: 'ADMIN', credits: '340.5', status: 'Active', joined: 'Oct 01, 2026', projectsCount: 12, tokensUsed: '3.2M' },
-  { id: 'u2', name: 'Jane Doe', email: 'jane@example.com', initials: 'JD', role: 'USER', credits: '178.6', status: 'Active', joined: 'Oct 05, 2026', projectsCount: 6, tokensUsed: '1.4M' },
-  { id: 'u3', name: 'Michael Chen', email: 'michael@example.com', initials: 'MC', role: 'USER', credits: '84.0', status: 'Active', joined: 'Oct 08, 2026', projectsCount: 3, tokensUsed: '620K' },
-  { id: 'u4', name: 'Sarah Connor', email: 'sarah@example.com', initials: 'SC', role: 'USER', credits: '0.0', status: 'Blocked', joined: 'Oct 09, 2026', projectsCount: 1, tokensUsed: '150K' },
-  { id: 'u5', name: 'David Kim', email: 'david@example.com', initials: 'DK', role: 'USER', credits: '215.2', status: 'Active', joined: 'Oct 11, 2026', projectsCount: 8, tokensUsed: '2.1M' },
-  { id: 'u6', name: 'Elena Rostova', email: 'elena@example.com', initials: 'ER', role: 'ADMIN', credits: '550.0', status: 'Active', joined: 'Oct 12, 2026', projectsCount: 15, tokensUsed: '4.8M' },
-];
+// Format tokens as 1.2K / 8.4M
+const formatTokens = (value) => {
+  const n = Number(value) || 0;
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return `${n}`;
+};
+
+// Format credits with max 2 decimals
+const formatCredits = (value) => `${Math.round((Number(value) || 0) * 100) / 100}`;
 
 export default function Admin() {
   const { user } = useSelector((state) => state.auth);
-  const isAdmin = user?.userType === "ADMIN";
-  const [users, setUsers] = useState(INITIAL_USERS);
-  const [searchQuery, setSearchQuery] = useState('');
+  const dispatch = useDispatch();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const token = user?.token;
 
-  // Active user selections
+  // Search, pagination and selection state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [selectedDrawerUser, setSelectedDrawerUser] = useState(null);
   const [adjustModalUser, setAdjustModalUser] = useState(null);
   const [adjustMode, setAdjustMode] = useState('add');
   const [adjustAmount, setAdjustAmount] = useState('');
   const [deleteModalUser, setDeleteModalUser] = useState(null);
 
-  // Filtered users
-  const filteredUsers = users.filter(
-    (u) =>
-      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Debounce the search input and reset to page 1 when it changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  const handleUpdateCredits = (userId, newAmount) => {
-    if (!isAdmin) return;
-    setUsers(users.map((u) => (u.id === userId ? { ...u, credits: newAmount } : u)));
-    if (selectedDrawerUser?.id === userId) {
-      setSelectedDrawerUser((prev) => ({ ...prev, credits: newAmount }));
+  // Overview stats
+  const statsQuery = useQuery({
+    queryKey: ['admin-stats'],
+    queryFn: () => adminService.getStats(token),
+    enabled: !!token,
+  });
+  const stats = statsQuery.data;
+
+  // Users list (server side search + pagination)
+  const usersQuery = useQuery({
+    queryKey: ['admin-users', page, debouncedSearch],
+    queryFn: () => adminService.getUsers(token, { page, search: debouncedSearch }),
+    enabled: !!token,
+    placeholderData: keepPreviousData,
+  });
+
+  // Map API users to the table shape
+  const users = (usersQuery.data?.users || []).map((u) => ({
+    id: u._id,
+    name: u.name,
+    email: u.email,
+    initials: (u.name || '?')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((word) => word.charAt(0).toUpperCase())
+      .join(''),
+    role: u.userType,
+    credits: formatCredits(u.credits),
+    status: u.isActive ? 'Active' : 'Blocked',
+    joined: new Date(u.createdAt).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }),
+    tokensUsed: formatTokens(u.totalTokensUsed),
+  }));
+  const total = usersQuery.data?.total || 0;
+  const pages = usersQuery.data?.pages || 1;
+
+  // Log out on auth errors from the admin API
+  const handleError = (error) => {
+    toast.error(error.response?.data?.message || 'Something went wrong');
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      localStorage.removeItem('user');
+      dispatch(logoutUser());
+      navigate('/login');
     }
   };
 
-  const handleToggleBlock = (user) => {
-    const newStatus = user.status === 'Active' ? 'Blocked' : 'Active';
-    setUsers(users.map((u) => (u.id === user.id ? { ...u, status: newStatus } : u)));
-    if (selectedDrawerUser?.id === user.id) {
-      setSelectedDrawerUser((prev) => ({ ...prev, status: newStatus }));
-    }
+  // Refresh the shared admin data after a mutation
+  const invalidateAdminData = () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-user'] });
   };
 
-  const handleConfirmDelete = () => {
-    if (!deleteModalUser) return;
-    setUsers(users.filter((u) => u.id !== deleteModalUser.id));
-    if (selectedDrawerUser?.id === deleteModalUser.id) setSelectedDrawerUser(null);
-    setDeleteModalUser(null);
+  // Adjust credits mutation
+  const creditsMutation = useMutation({
+    mutationFn: ({ userId, payload }) => adminService.updateCredits(token, userId, payload),
+    onSuccess: () => {
+      toast.success('Credits updated');
+      invalidateAdminData();
+      setAdjustModalUser(null);
+      setAdjustAmount('');
+    },
+    onError: handleError,
+  });
+
+  // Block / unblock mutation
+  const blockMutation = useMutation({
+    mutationFn: ({ userId, isActive }) => adminService.updateBlock(token, userId, isActive),
+    onSuccess: (_, variables) => {
+      toast.success(variables.isActive ? 'User unblocked' : 'User blocked');
+      invalidateAdminData();
+    },
+    onError: handleError,
+  });
+
+  // Delete user mutation
+  const deleteMutation = useMutation({
+    mutationFn: (userId) => adminService.deleteUser(token, userId),
+    onSuccess: () => {
+      toast.success('User deleted');
+      invalidateAdminData();
+      if (selectedDrawerUser?.id === deleteModalUser?.id) setSelectedDrawerUser(null);
+      setDeleteModalUser(null);
+    },
+    onError: handleError,
+  });
+
+  // Adjust credits from the drawer or modal
+  const handleUpdateCredits = (userId, payload) => {
+    creditsMutation.mutate({ userId, payload });
   };
 
+  // Block or unblock a user
+  const handleToggleBlock = (target) => {
+    blockMutation.mutate({ userId: target.id, isActive: target.status !== 'Active' });
+  };
+
+  // Validate and submit the adjust credits modal
   const handleSaveModalCredits = (e) => {
     e.preventDefault();
+    if (!adjustModalUser) return;
     const amount = parseFloat(adjustAmount);
-    if (isNaN(amount) || amount <= 0 || !adjustModalUser) return;
-    let newCredits = parseFloat(adjustModalUser.credits) || 0;
-    if (adjustMode === 'add') newCredits += amount;
-    else if (adjustMode === 'remove') newCredits = Math.max(0, newCredits - amount);
-    else if (adjustMode === 'set') newCredits = Math.max(0, amount);
-    handleUpdateCredits(adjustModalUser.id, newCredits.toFixed(1));
-    setAdjustModalUser(null);
-    setAdjustAmount('');
+    const valid = !isNaN(amount) && (adjustMode === 'set' ? amount >= 0 : amount > 0);
+    if (!valid) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+    handleUpdateCredits(adjustModalUser.id, { action: adjustMode, amount });
+  };
+
+  // Confirm user deletion
+  const handleConfirmDelete = () => {
+    if (!deleteModalUser) return;
+    deleteMutation.mutate(deleteModalUser.id);
   };
 
   return (
@@ -92,14 +193,14 @@ export default function Admin() {
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Overview</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard label="Total users" value="128" icon={Users} />
-            <StatCard label="Blocked users" value="3" icon={UserX} />
-            <StatCard label="Admins" value="2" icon={ShieldCheck} />
-            <StatCard label="Projects" value="214" icon={FolderKanban} />
-            <StatCard label="Chats" value="214" icon={MessageSquare} />
-            <StatCard label="Tokens used" value="8.4M" icon={Zap} />
-            <StatCard label="Credits used" value="1,420.8" icon={Coins} />
-            <StatCard label="Credits used today" value="42" icon={Activity} />
+            <StatCard label="Total users" value={stats ? stats.users : '...'} icon={Users} />
+            <StatCard label="Blocked users" value={stats ? stats.blockedUsers : '...'} icon={UserX} />
+            <StatCard label="Admins" value={stats ? stats.admins : '...'} icon={ShieldCheck} />
+            <StatCard label="Projects" value={stats ? stats.projects : '...'} icon={FolderKanban} />
+            <StatCard label="Chats" value={stats ? stats.chats : '...'} icon={MessageSquare} />
+            <StatCard label="Tokens used" value={formatTokens(stats?.totalTokensUsed)} icon={Zap} />
+            <StatCard label="Credits used" value={formatCredits(stats?.totalCreditsUsed)} icon={Coins} />
+            <StatCard label="Credits used today" value={formatCredits(stats?.creditsUsedToday)} icon={Activity} />
           </div>
         </section>
 
@@ -119,21 +220,32 @@ export default function Admin() {
                 />
               </div>
               <span className="text-xs text-muted font-medium self-end sm:self-center">
-                {filteredUsers.length} {filteredUsers.length === 1 ? 'user' : 'users'}
+                {total} {total === 1 ? 'user' : 'users'}
               </span>
             </div>
 
             {/* Users Table & Mobile Cards */}
-            <UsersTable
-              users={filteredUsers}
-              onViewDetails={(u) => setSelectedDrawerUser(u)}
-              onAdjustCredits={(u) => {
-                setAdjustModalUser(u);
-                setAdjustAmount('');
-              }}
-              onToggleBlock={handleToggleBlock}
-              onDelete={(u) => setDeleteModalUser(u)}
-            />
+            {usersQuery.isLoading ? (
+              <div className="p-8 text-center text-xs text-muted">Loading users...</div>
+            ) : usersQuery.isError ? (
+              <div className="p-8 text-center text-xs text-muted">Could not load users</div>
+            ) : users.length === 0 ? (
+              <div className="p-8 text-center text-xs text-muted">No users found</div>
+            ) : (
+              <UsersTable
+                users={users}
+                page={page}
+                pages={pages}
+                onPageChange={setPage}
+                onViewDetails={(u) => setSelectedDrawerUser(u)}
+                onAdjustCredits={(u) => {
+                  setAdjustModalUser(u);
+                  setAdjustAmount('');
+                }}
+                onToggleBlock={handleToggleBlock}
+                onDelete={(u) => setDeleteModalUser(u)}
+              />
+            )}
           </div>
         </section>
       </div>

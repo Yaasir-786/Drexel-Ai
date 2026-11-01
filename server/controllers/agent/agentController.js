@@ -4,7 +4,11 @@ import Project, {
 } from "../../models/projectModel.js";
 import Chat, { MAX_CHAT_MESSAGES } from "../../models/chatModel.js";
 import credit from "../../middleware/creditMiddleware.js";
-import { friendlyLlmError } from "../../agents/llmClient.js";
+import {
+  completeChat,
+  friendlyLlmError,
+  pickModel,
+} from "../../agents/llmClient.js";
 import {
   stripReservedTags,
   buildUserContent,
@@ -290,7 +294,9 @@ const streamAgent = async (req, res) => {
             });
           } else {
             if (chatOnly) {
-              const rename = (!chat.title || chat.title === "New chat") && plan.projectName;
+              const rename =
+                (!chat.title || chat.title === "New chat") && plan.projectName;
+              if (rename) chat.title = plan.projectName;
               await Chat.updateOne(
                 { _id: chat._id },
                 {
@@ -360,6 +366,45 @@ const streamAgent = async (req, res) => {
           type: file.type,
         })),
       };
+
+      // Claude-style title: after the first reply of a new chat, ask the model for a short title
+      if (chatOnly && (!chat.title || chat.title === "New chat")) {
+        const words = (typeof message === "string" ? message : "")
+          .trim()
+          .split(/\s+/)
+          .slice(0, 5)
+          .join(" ");
+        const fallbackTitle = words
+          ? words.charAt(0).toUpperCase() + words.slice(1)
+          : "New chat";
+        let title = fallbackTitle;
+        try {
+          const result = await completeChat({
+            model: pickModel("planner"),
+            messages: [
+              {
+                role: "user",
+                content: `Write a 2-5 word title for this conversation. Same language as the user. No quotes, no ending punctuation.\n\nUser message: ${String(message || "").slice(0, 500)}`,
+              },
+            ],
+            maxTokens: 40,
+            temperature: 0.3,
+            signal,
+          });
+          totalTokens += result.tokens || 0;
+          const generated = (result.text || "")
+            .trim()
+            .replace(/^["']+|["']+$/g, "")
+            .slice(0, 40);
+          if (generated) {
+            title = generated.charAt(0).toUpperCase() + generated.slice(1);
+          }
+        } catch (error) {
+          console.log(`TITLE GENERATION FAILED... ${error.message}`);
+        }
+        await Chat.updateOne({ _id: chat._id }, { $set: { title } });
+        send("title", { chatId: chat._id, title });
+      }
 
       const Model = chatOnly ? Chat : Project;
   await Model.updateOne({ _id: convo._id }, {

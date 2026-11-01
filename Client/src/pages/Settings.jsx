@@ -1,116 +1,142 @@
 // Settings page: profile details, password update, and theme appearance selector
-import React, { useState } from 'react';
-import { Sun, Moon, CheckCircle2, User, RotateCcw, Palette } from 'lucide-react';
-import AppShell from '../components/layout/AppShell';
-import TextField from '../components/TextField';
-import Button from '../components/Button';
-import Toast from '../components/Toast';
-import { useTheme } from '../context/ThemeContext';
+import React, { useState } from "react";
+import {
+  Sun,
+  Moon,
+  CheckCircle2,
+  User,
+  RotateCcw,
+  Palette,
+} from "lucide-react";
+import AppShell from "../components/layout/AppShell";
+import TextField from "../components/TextField";
+import Button from "../components/Button";
+import Toast from "../components/Toast";
+import { useTheme } from "../context/ThemeContext";
+import { useSelector, useDispatch } from "react-redux";
+import { useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import userService from "../services/userService";
+import authService from "../services/authService";
+import { getProfile } from "../features/auth/authSlice";
+
+// Show "-" when a read-only profile value is empty
+const orDash = (value) => (value ? value : "-");
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState('profile');
+  const { user } = useSelector((state) => state.auth);
+  const dispatch = useDispatch();
+  const isAdmin = user?.userType === "ADMIN";
 
-  // Profile form states
-  const [name, setName] = useState('Jane Doe');
-  const [role, setRole] = useState('Developer');
-  const [goal, setGoal] = useState('SaaS and AI agent web applications');
-  const [teamSize, setTeamSize] = useState('Just me');
+  // Editable profile form states (prefilled from the logged-in user)
+  const [name, setName] = useState(user?.name || "");
+  const [role, setRole] = useState(user?.onboarding?.role || "");
+  const [goal, setGoal] = useState(user?.onboarding?.goal || "");
+  const [teamSize, setTeamSize] = useState(user?.onboarding?.teamSize || "");
+
+  // Last saved values, used to detect changes and resync after saving
+  const [saved, setSaved] = useState({
+    name: user?.name || "",
+    role: user?.onboarding?.role || "",
+    goal: user?.onboarding?.goal || "",
+    teamSize: user?.onboarding?.teamSize || "",
+  });
 
   // Password form states
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
 
+  // Save profile mutation
+  const profileMutation = useMutation({
+    mutationFn: (payload) => userService.updateProfile(user?.token, payload),
+    onSuccess: (data, variables) => {
+      dispatch(getProfile(data));
+      localStorage.setItem("user", JSON.stringify({ ...user, ...data }));
+      setSaved((prev) => ({ ...prev, ...variables }));
+      toast.success("Profile updated");
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || "Something went wrong");
+    },
+  });
+
+  // Build the payload from changed fields that are not empty (admins can only change the name)
+  const payload = {};
+  if (name.trim() !== saved.name && name.trim()) payload.name = name.trim();
+  if (!isAdmin) {
+    if (role !== saved.role && role) payload.role = role;
+    if (goal.trim() !== saved.goal && goal.trim()) payload.goal = goal.trim();
+    if (teamSize !== saved.teamSize && teamSize) payload.teamSize = teamSize;
+  }
+
+  // Save is allowed only with valid name/goal and at least one real change
+  const isValid =
+    name.trim().length >= 2 &&
+    name.trim().length <= 50 &&
+    goal.trim().length <= 300;
+  const canSave =
+    isValid && !profileMutation.isPending && Object.keys(payload).length > 0;
+
+  // Save the profile
   const handleProfileSave = (e) => {
     e.preventDefault();
-    setShowToast(true);
+    if (!canSave) return;
+    profileMutation.mutate(payload);
   };
 
+  // Change password mutation (the API returns a fresh token)
+  const passwordMutation = useMutation({
+    mutationFn: (payload) => authService.changePassword(user?.token, payload),
+    onSuccess: (data) => {
+      dispatch(getProfile({ token: data.token }));
+      localStorage.setItem(
+        "user",
+        JSON.stringify({ ...user, token: data.token }),
+      );
+      setCurrentPassword("");
+      setNewPassword("");
+      setShowToast(true);
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || "Something went wrong");
+    },
+  });
+
+  // Validate and change the password
   const handlePasswordSave = (e) => {
     e.preventDefault();
-    setCurrentPassword('');
-    setNewPassword('');
-    setShowToast(true);
+    if (!currentPassword || !newPassword) {
+      toast.error("Enter both passwords");
+      return;
+    }
+    passwordMutation.mutate({ currentPassword, newPassword });
   };
 
   return (
     <AppShell title="Settings" description="Manage your profile and appearance">
       <div className="flex flex-col md:flex-row gap-8 items-start relative">
-        {/* Sub-navigation matching reference image */}
-        <nav aria-label="Settings sections" className="w-full md:w-[220px] shrink-0 sticky top-20 z-10">
-          <div className="flex md:flex-col gap-1 p-1 bg-surface rounded-2xl border border-line">
-            <a
-              href="#profile"
-              onClick={() => setActiveTab('profile')}
-              className={`px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors ${
-                activeTab === 'profile'
-                  ? 'bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]'
-                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <User
-                size={18}
-                className={
-                  activeTab === 'profile'
-                    ? 'text-[#0066cc] dark:text-[#60a5fa]'
-                    : 'text-slate-700 dark:text-slate-300'
-                }
-              />
-              <span>Profile</span>
-            </a>
-            <a
-              href="#password"
-              onClick={() => setActiveTab('password')}
-              className={`px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors ${
-                activeTab === 'password'
-                  ? 'bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]'
-                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <RotateCcw
-                size={18}
-                className={
-                  activeTab === 'password'
-                    ? 'text-[#0066cc] dark:text-[#60a5fa]'
-                    : 'text-slate-700 dark:text-slate-300'
-                }
-              />
-              <span>Password</span>
-            </a>
-            <a
-              href="#appearance"
-              onClick={() => setActiveTab('appearance')}
-              className={`px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-3 transition-colors ${
-                activeTab === 'appearance'
-                  ? 'bg-[#dbeafe] text-[#0066cc] dark:bg-blue-600/20 dark:text-[#60a5fa]'
-                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800/60'
-              }`}
-            >
-              <Palette
-                size={18}
-                className={
-                  activeTab === 'appearance'
-                    ? 'text-[#0066cc] dark:text-[#60a5fa]'
-                    : 'text-slate-700 dark:text-slate-300'
-                }
-              />
-              <span>Appearance</span>
-            </a>
-          </div>
-        </nav>
-
         {/* Settings Cards (24px gap) */}
         <div className="flex-1 flex flex-col gap-6 w-full">
           {/* 1. Profile Details Card */}
-          <div id="profile" className="bg-card border border-line rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-ink mb-1">Profile details</h2>
-            <p className="text-xs text-muted mb-5">Update your basic information and team configuration.</p>
+          <div
+            id="profile"
+            className="bg-card border border-line rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-semibold text-ink mb-1">
+              Profile details
+            </h2>
+            <p className="text-xs text-muted mb-5">
+              Update your basic information and team configuration.
+            </p>
 
             <form onSubmit={handleProfileSave} className="flex flex-col gap-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div
+                className={`grid gap-4 ${
+                  isAdmin ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"
+                }`}>
                 <TextField
                   id="profile-name"
                   label="Name"
@@ -118,58 +144,91 @@ export default function Settings() {
                   onChange={(e) => setName(e.target.value)}
                 />
 
-                <div className="flex flex-col gap-1.5 w-full">
-                  <label htmlFor="profile-role" className="text-sm font-medium text-ink">Role</label>
-                  <select
-                    id="profile-role"
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="w-full h-11 px-3 rounded-xl border border-line bg-card text-sm text-ink outline-none focus:ring-2 focus:ring-[#0099FF]"
-                  >
-                    <option value="Student">Student</option>
-                    <option value="Developer">Developer</option>
-                    <option value="Designer">Designer</option>
-                    <option value="Founder">Founder</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
+                {!isAdmin && (
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label
+                      htmlFor="profile-role"
+                      className="text-sm font-medium text-ink">
+                      Role
+                    </label>
+                    <select
+                      id="profile-role"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      className="w-full h-11 px-3 rounded-xl border border-line bg-card text-sm text-ink outline-none focus:ring-2 focus:ring-[#0099FF]">
+                      <option value="">Select role</option>
+                      <option value="Student">Student</option>
+                      <option value="Developer">Developer</option>
+                      <option value="Designer">Designer</option>
+                      <option value="Founder">Founder</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {!isAdmin && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <TextField
+                    id="profile-goal"
+                    label="What do you want to build"
+                    value={goal}
+                    onChange={(e) => setGoal(e.target.value)}
+                    maxLength={300}
+                  />
+
+                  <div className="flex flex-col gap-1.5 w-full">
+                    <label
+                      htmlFor="profile-team"
+                      className="text-sm font-medium text-ink">
+                      Team size
+                    </label>
+                    <select
+                      id="profile-team"
+                      value={teamSize}
+                      onChange={(e) => setTeamSize(e.target.value)}
+                      className="w-full h-11 px-3 rounded-xl border border-line bg-card text-sm text-ink outline-none focus:ring-2 focus:ring-[#0099FF]">
+                      <option value="">Select team size</option>
+                      <option value="Just me">Just me</option>
+                      <option value="2-5">2-5</option>
+                      <option value="6-20">6-20</option>
+                      <option value="21-50">21-50</option>
+                      <option value="50+">50+</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {isAdmin ? (
                 <TextField
-                  id="profile-goal"
-                  label="What do you want to build"
-                  value={goal}
-                  onChange={(e) => setGoal(e.target.value)}
+                  id="profile-email"
+                  label="Email"
+                  value={orDash(user?.email)}
+                  readOnly
+                  helperText="Email cannot be changed."
                 />
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <TextField
+                    id="profile-phone"
+                    label="Phone"
+                    value={orDash(user?.phone)}
+                    readOnly
+                    helperText="Phone cannot be changed."
+                  />
 
-                <div className="flex flex-col gap-1.5 w-full">
-                  <label htmlFor="profile-team" className="text-sm font-medium text-ink">Team size</label>
-                  <select
-                    id="profile-team"
-                    value={teamSize}
-                    onChange={(e) => setTeamSize(e.target.value)}
-                    className="w-full h-11 px-3 rounded-xl border border-line bg-card text-sm text-ink outline-none focus:ring-2 focus:ring-[#0099FF]"
-                  >
-                    <option value="Just me">Just me</option>
-                    <option value="2-5">2-5</option>
-                    <option value="6-20">6-20</option>
-                    <option value="21-50">21-50</option>
-                    <option value="50+">50+</option>
-                  </select>
+                  <TextField
+                    id="profile-email"
+                    label="Email"
+                    value={orDash(user?.email)}
+                    readOnly
+                    helperText="Email cannot be changed."
+                  />
                 </div>
-              </div>
-
-              <TextField
-                id="profile-email"
-                label="Email"
-                value="jane@example.com"
-                readOnly
-                helperText="Email cannot be changed."
-              />
+              )}
 
               <div className="flex justify-end pt-2">
-                <Button type="submit" variant="primary">
+                <Button type="submit" variant="primary" disabled={!canSave}>
                   Save changes
                 </Button>
               </div>
@@ -177,9 +236,15 @@ export default function Settings() {
           </div>
 
           {/* 2. Change Password Card */}
-          <div id="password" className="bg-card border border-line rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-ink mb-1">Change password</h2>
-            <p className="text-xs text-muted mb-5">Ensure your account is protected with a secure password.</p>
+          <div
+            id="password"
+            className="bg-card border border-line rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-semibold text-ink mb-1">
+              Change password
+            </h2>
+            <p className="text-xs text-muted mb-5">
+              Ensure your account is protected with a secure password.
+            </p>
 
             <form onSubmit={handlePasswordSave} className="flex flex-col gap-4">
               <TextField
@@ -210,53 +275,65 @@ export default function Settings() {
           </div>
 
           {/* 3. Appearance Card */}
-          <div id="appearance" className="bg-card border border-line rounded-2xl p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-ink mb-1">Appearance</h2>
-            <p className="text-xs text-muted mb-5">Choose between light and dark visual themes.</p>
+          <div
+            id="appearance"
+            className="bg-card border border-line rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-semibold text-ink mb-1">
+              Appearance
+            </h2>
+            <p className="text-xs text-muted mb-5">
+              Choose between light and dark visual themes.
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Light Tile */}
               <button
                 type="button"
-                onClick={() => setTheme('light')}
+                onClick={() => setTheme("light")}
                 className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer text-left ${
-                  theme === 'light'
-                    ? 'border-[#0099FF] bg-blue-50/60 dark:bg-blue-950/40 text-ink'
-                    : 'border-line bg-surface text-muted hover:text-ink'
-                }`}
-              >
+                  theme === "light"
+                    ? "border-[#0099FF] bg-blue-50/60 dark:bg-blue-950/40 text-ink"
+                    : "border-line bg-surface text-muted hover:text-ink"
+                }`}>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-card border border-line flex items-center justify-center text-amber-500">
                     <Sun size={20} />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-ink">Light</div>
-                    <div className="text-xs text-muted">Crisp white workbench</div>
+                    <div className="text-xs text-muted">
+                      Crisp white workbench
+                    </div>
                   </div>
                 </div>
-                {theme === 'light' && <CheckCircle2 size={20} className="text-[#0099FF]" />}
+                {theme === "light" && (
+                  <CheckCircle2 size={20} className="text-[#0099FF]" />
+                )}
               </button>
 
               {/* Dark Tile */}
               <button
                 type="button"
-                onClick={() => setTheme('dark')}
+                onClick={() => setTheme("dark")}
                 className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer text-left ${
-                  theme === 'dark'
-                    ? 'border-[#0099FF] bg-blue-50/60 dark:bg-blue-950/40 text-ink'
-                    : 'border-line bg-surface text-muted hover:text-ink'
-                }`}
-              >
+                  theme === "dark"
+                    ? "border-[#0099FF] bg-blue-50/60 dark:bg-blue-950/40 text-ink"
+                    : "border-line bg-surface text-muted hover:text-ink"
+                }`}>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-card border border-line flex items-center justify-center text-blue-400">
                     <Moon size={20} />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-ink">Dark</div>
-                    <div className="text-xs text-muted">Low-light obsidian layout</div>
+                    <div className="text-xs text-muted">
+                      Low-light obsidian layout
+                    </div>
                   </div>
                 </div>
-                {theme === 'dark' && <CheckCircle2 size={20} className="text-[#0099FF]" />}
+                {theme === "dark" && (
+                  <CheckCircle2 size={20} className="text-[#0099FF]" />
+                )}
               </button>
             </div>
           </div>

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-page: var(--page);
   --color-surface: var(--surface);
@@ -11,17 +13,18 @@
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-dm: 'DM Sans', system-ui, sans-serif;
   --radius-btn: 12px;
   --radius-card: 16px;
 }
 
 :root {
-  --page: #FFFFFF;
-  --surface: #F7F8FA;
+  --page: #F4F6FA;
+  --surface: #EBEFF5;
   --card: #FFFFFF;
-  --line: #E5E7EB;
-  --ink: #0A0A0B;
-  --muted: #6B7280;
+  --line: #D9DFEA;
+  --ink: #0F172A;
+  --muted: #5B6577;
 }
 
 * {
@@ -41,6 +44,7 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -65,4 +69,147 @@ body {
 
 .sp-wrapper, .sp-wrapper .sp-stack, .sp-wrapper .sp-preview-container, .sp-wrapper .sp-preview-iframe { height: 100% !important; }
 .sp-wrapper { --sp-layout-height: 100%; }
+
+/* PromptGlow: soft blue light-rays glow around the chat prompt inputs */
+.prompt-glow {
+  position: relative;
+  width: 100%;
+  isolation: isolate;
+}
+
+.prompt-glow__content {
+  position: relative;
+  z-index: 2;
+}
+
+.prompt-glow__halo {
+  position: absolute;
+  inset: -6px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, #0099FF, #6D5DFC);
+  filter: blur(26px);
+  transition: opacity 300ms ease;
+}
+
+/* the rays span only clips; the rotating layer inside never grows the bounding box */
+.prompt-glow__rays {
+  position: absolute;
+  inset: -4px;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+
+.prompt-glow__rays::before {
+  content: "";
+  position: absolute;
+  inset: -50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(0, 153, 255, 0.55) 60deg,
+    transparent 120deg,
+    rgba(109, 93, 252, 0.45) 200deg,
+    transparent 260deg,
+    rgba(0, 153, 255, 0.35) 320deg,
+    transparent 360deg
+  );
+  filter: blur(20px);
+  animation: prompt-rays-spin 12s linear infinite;
+}
+
+/* radius follows the content radius, slightly larger */
+.prompt-glow--2xl .prompt-glow__halo,
+.prompt-glow--2xl .prompt-glow__rays {
+  border-radius: 1.5rem;
+}
+
+.prompt-glow--xl .prompt-glow__halo,
+.prompt-glow--xl .prompt-glow__rays {
+  border-radius: 1.25rem;
+}
+
+/* tighter glow for the narrow builder panel (~10px extent) */
+.prompt-glow--tight .prompt-glow__halo {
+  inset: -4px;
+  filter: blur(14px);
+}
+
+.prompt-glow--tight .prompt-glow__rays {
+  inset: -3px;
+}
+
+.prompt-glow--tight .prompt-glow__rays::before {
+  filter: blur(10px);
+}
+
+/* light theme (default): gentle blue shadow, roughly half strength */
+.prompt-glow__halo {
+  opacity: 0.09;
+}
+
+.prompt-glow__rays {
+  opacity: 0.18;
+}
+
+.prompt-glow:focus-within .prompt-glow__halo {
+  opacity: 0.2;
+}
+
+.prompt-glow:focus-within .prompt-glow__rays {
+  opacity: 0.38;
+}
+
+.prompt-glow--active .prompt-glow__halo {
+  opacity: 0.22;
+}
+
+.prompt-glow--active .prompt-glow__rays {
+  opacity: 0.42;
+}
+
+/* dark theme: the stronger values */
+.dark .prompt-glow__halo {
+  opacity: 0.18;
+}
+
+.dark .prompt-glow__rays {
+  opacity: 0.35;
+}
+
+.dark .prompt-glow:focus-within .prompt-glow__halo {
+  opacity: 0.4;
+}
+
+.dark .prompt-glow:focus-within .prompt-glow__rays {
+  opacity: 0.75;
+}
+
+.dark .prompt-glow--active .prompt-glow__halo {
+  opacity: 0.45;
+}
+
+.dark .prompt-glow--active .prompt-glow__rays {
+  opacity: 0.85;
+}
+
+/* faster rays while the AI is generating */
+.prompt-glow--active .prompt-glow__rays::before {
+  animation-duration: 8s;
+}
+
+@keyframes prompt-rays-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-glow__rays {
+    animation: none;
+    display: none;
+  }
+}
 

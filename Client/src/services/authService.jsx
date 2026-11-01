@@ -20,10 +20,18 @@ const getMyProfile = async (token) => {
   return response.data;
 };
 
+const changePassword = async (token, payload) => {
+  const response = await axios.put("/api/auth/password", payload, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  return response.data;
+};
+
 const authService = {
   registerUser,
   loginUser,
   getMyProfile,
+  changePassword,
 };
 
 export default authService;

@@ -22,12 +22,11 @@ const completeOnboarding = async (req, res) => {
 };
 
 const updateProfile = async (req, res) => {
-  const { name, phone, role, goal, teamSize } = req.body;
+  const { name, role, goal, teamSize } = req.body;
 
   // only these fields can be changed (userType, credits, isActive can never be changed here)
   const updates = {};
   if (name !== undefined) updates.name = name;
-  if (phone !== undefined) updates.phone = phone;
   if (role !== undefined) updates["onboarding.role"] = role;
   if (goal !== undefined) updates["onboarding.goal"] = goal;
   if (teamSize !== undefined) updates["onboarding.teamSize"] = teamSize;

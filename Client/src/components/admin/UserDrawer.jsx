@@ -3,6 +3,17 @@ import React, { useState } from 'react';
 import { X, ShieldAlert } from 'lucide-react';
 import Badge from '../Badge';
 import Button from '../Button';
+import { useSelector } from 'react-redux';
+import { useQuery } from '@tanstack/react-query';
+import adminService from '../../services/adminService';
+
+// Format tokens as 1.2K / 8.4M
+const formatTokens = (value) => {
+  const n = Number(value) || 0;
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return `${n}`;
+};
 
 export default function UserDrawer({
   user,
@@ -12,26 +23,27 @@ export default function UserDrawer({
   onToggleBlock,
   onDeleteUser,
 }) {
+  const { user: authUser } = useSelector((state) => state.auth);
   const [creditMode, setCreditMode] = useState('add'); // 'add', 'remove', 'set'
   const [creditAmount, setCreditAmount] = useState('');
 
+  // Fetch fresh user details when the drawer opens
+  const detailsQuery = useQuery({
+    queryKey: ['admin-user', user?.id],
+    queryFn: () => adminService.getSingleUser(authUser?.token, user.id),
+    enabled: !!(isOpen && user && authUser?.token),
+  });
+  const details = detailsQuery.data;
+
   if (!isOpen || !user) return null;
 
+  // Send the real action and amount to the parent
   const handleSaveCredits = (e) => {
     e.preventDefault();
     const amount = parseFloat(creditAmount);
-    if (isNaN(amount) || amount <= 0) return;
+    if (isNaN(amount) || (creditMode === 'set' ? amount < 0 : amount <= 0)) return;
 
-    let newCredits = parseFloat(user.credits) || 0;
-    if (creditMode === 'add') {
-      newCredits += amount;
-    } else if (creditMode === 'remove') {
-      newCredits = Math.max(0, newCredits - amount);
-    } else if (creditMode === 'set') {
-      newCredits = Math.max(0, amount);
-    }
-
-    onUpdateCredits(user.id, newCredits.toFixed(1));
+    onUpdateCredits(user.id, { action: creditMode, amount });
     setCreditAmount('');
   };
 
@@ -82,15 +94,15 @@ export default function UserDrawer({
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-surface border border-line rounded-xl p-3 text-center">
               <span className="text-[11px] font-medium text-muted block mb-1">Projects</span>
-              <span className="text-base font-bold text-ink">{user.projectsCount || 6}</span>
+              <span className="text-base font-bold text-ink">{details ? details.projectCount : '...'}</span>
             </div>
             <div className="bg-surface border border-line rounded-xl p-3 text-center">
               <span className="text-[11px] font-medium text-muted block mb-1">Tokens</span>
-              <span className="text-base font-bold text-ink">{user.tokensUsed || '1.4M'}</span>
+              <span className="text-base font-bold text-ink">{details ? formatTokens(details.totalTokensUsed) : '...'}</span>
             </div>
             <div className="bg-surface border border-line rounded-xl p-3 text-center">
               <span className="text-[11px] font-medium text-muted block mb-1">Credits</span>
-              <span className="text-base font-bold text-ink">{user.credits}</span>
+              <span className="text-base font-bold text-ink">{details ? details.user.credits : '...'}</span>
             </div>
           </div>
 
@@ -128,40 +140,44 @@ export default function UserDrawer({
             </form>
           </div>
 
-          {/* Row: Block User Toggle */}
-          <div className="flex items-center justify-between p-4 rounded-xl border border-line bg-surface">
-            <div>
-              <span className="text-sm font-semibold text-ink block">Block user</span>
-              <span className="text-xs text-muted">Prevent this user from logging in and generating code</span>
+          {/* Row: Block User Toggle (hidden for admins) */}
+          {user.role !== 'ADMIN' && (
+            <div className="flex items-center justify-between p-4 rounded-xl border border-line bg-surface">
+              <div>
+                <span className="text-sm font-semibold text-ink block">Block user</span>
+                <span className="text-xs text-muted">Prevent this user from logging in and generating code</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onToggleBlock(user)}
+                className={`w-12 h-6 rounded-full border border-line p-0.5 flex items-center cursor-pointer ${
+                  user.status === 'Blocked' ? 'bg-red-500 justify-end' : 'bg-card justify-start'
+                }`}
+              >
+                <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => onToggleBlock(user)}
-              className={`w-12 h-6 rounded-full border border-line p-0.5 flex items-center cursor-pointer ${
-                user.status === 'Blocked' ? 'bg-red-500 justify-end' : 'bg-card justify-start'
-              }`}
-            >
-              <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
-            </button>
-          </div>
+          )}
 
-          {/* Danger Zone Card */}
-          <div className="border border-red-300 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20 rounded-2xl p-4 flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-red-600 dark:text-red-400 font-semibold text-sm">
-              <ShieldAlert size={18} />
-              Danger zone
+          {/* Danger Zone Card (hidden for admins) */}
+          {user.role !== 'ADMIN' && (
+            <div className="border border-red-300 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20 rounded-2xl p-4 flex flex-col gap-3">
+              <div className="flex items-center gap-2 text-red-600 dark:text-red-400 font-semibold text-sm">
+                <ShieldAlert size={18} />
+                Danger zone
+              </div>
+              <p className="text-xs text-muted">
+                This permanently deletes the user, their projects and chats.
+              </p>
+              <Button
+                variant="danger"
+                onClick={() => onDeleteUser(user)}
+                className="w-full mt-1"
+              >
+                Delete user
+              </Button>
             </div>
-            <p className="text-xs text-muted">
-              This permanently deletes the user, their projects and chats.
-            </p>
-            <Button
-              variant="danger"
-              onClick={() => onDeleteUser(user)}
-              className="w-full mt-1"
-            >
-              Delete user
-            </Button>
-          </div>
+          )}
         </div>
       </div>
     </div>

@@ -10,6 +10,8 @@ import Button from '../Button';
 import Badge from '../Badge';
 import ChatMessageContent from '../ChatMessageContent';
 import RunStatus from '../RunStatus';
+import PromptGlow from '../PromptGlow';
+import Greeting from '../Greeting';
 
 export default function ChatPanel({
   messages = [],
@@ -95,10 +97,7 @@ export default function ChatPanel({
                 style={{ filter: "drop-shadow(0 0 8px rgba(59,140,255,0.55))" }}
               />
             </div>
-            <h3 className="relative text-sm font-semibold text-ink">What do you want to build?</h3>
-            <p className="relative text-xs mt-1 max-w-xs">
-              Ask questions for code snippets or describe your application to generate live components.
-            </p>
+            <Greeting />
           </div>
         ) : (
           messages.map((msg, index) => {
@@ -161,7 +160,8 @@ export default function ChatPanel({
       </div>
 
       {/* Input Area Pinned at the Bottom */}
-      <div className="p-4 border-t border-line bg-card shrink-0 flex flex-col gap-2">
+      <div className="px-4 pt-4 pb-5 border-t border-line bg-card shrink-0 flex flex-col gap-2">
+        <PromptGlow rounded="xl" active={isGenerating} className="prompt-glow--tight">
         <textarea
           rows={2}
           value={inputText}
@@ -179,6 +179,7 @@ export default function ChatPanel({
           }
           className="w-full p-2.5 font-serif text-sm rounded-xl border border-line bg-surface text-ink outline-none focus:ring-2 focus:ring-[#0099FF] resize-none"
         />
+        </PromptGlow>
 
         {/* Attachments */}
         {attachments.length > 0 && (
