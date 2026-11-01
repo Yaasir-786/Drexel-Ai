@@ -1,96 +1,341 @@
-# Drexel-Ai (backend)
+# Drexel-Ai
 
-AI app builder backend. Express 5 + MongoDB (Mongoose) + JWT (Bearer token) + 2 AI agents (Planner, Coder).
+**AI-Powered App Builder**
 
-## Setup
+Drexel-Ai is a full-stack AI app builder (in the spirit of Lovable) where a user can chat with an AI, describe what they want, and get a working website, app, script or project back — with a live preview, an editable code view, a one-click ZIP download and a full chat history. Two AI agents (a Planner and a Coder) work behind the scenes, so the user only sees a clean chat.
 
-```bash
-npm install
-cp .env.example .env      # fill MONGO_URI, JWT_SECRET, LLM_API_KEY, CLOUDINARY_*
-npm run seed              # creates the admin user (ADMIN_EMAIL / ADMIN_PASSWORD)
-npm run dev               # http://localhost:5000
+Built and maintained by **Yaasir Sheikh**.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Core Features](#core-features)
+- [User Roles](#user-roles)
+- [Tech Stack](#tech-stack)
+- [System Architecture](#system-architecture)
+- [AI / Agent Flow](#ai--agent-flow)
+- [Streaming Events (SSE)](#streaming-events-sse)
+- [Credits & Usage](#credits--usage)
+- [API Endpoints](#api-endpoints)
+- [Database Design](#database-design)
+- [Folder Structure](#folder-structure)
+- [Getting Started](#getting-started)
+- [Environment Variables](#environment-variables)
+- [Roadmap](#roadmap)
+- [Disclaimer](#disclaimer)
+- [About](#about)
+
+## Overview
+
+Building even a small website needs design, code, setup and debugging. Drexel-Ai brings all of that into one conversation: you describe the idea, the AI decides the right technology, writes the code, reviews it, and shows it running in the browser.
+
+**In one sentence:** Describe it → the AI plans and codes it → preview it → edit, fix or download it.
+
+## Core Features
+
+### 1. Chat That Can Also Build
+
+- A Claude-style chat page: normal questions get normal answers, build requests produce real projects
+- A small classifier decides per message whether it is a question (chat) or a build request
+- Switching between chatting and building inside the same chat works: the Planner decides whether a request edits the current files or starts a brand new project
+- Chat history is saved and listed in the sidebar; code blocks have a Copy button
+- Chat builds are stored with the chat — they never create an entry in the Projects page
+
+### 2. Project Builder
+
+- A dedicated Builder page for projects the user creates on purpose (Projects → New project)
+- Chat panel + live **Preview** + **Code** panel (editable, with Copy) in one screen
+- **Fix with AI**: a preview error can be sent straight to the Coder with one click
+- **Download ZIP** of the whole project
+- Files are saved automatically and a version snapshot is created for every AI change
+
+### 3. Smart Technology Selection
+
+The Planner picks the technology from the request instead of always generating React:
+
+| Request | Output |
+| --- | --- |
+| User names a technology (Vue, Python, Java, Node, ...) | Exactly that stack, as a complete production-style project (folders, dependency file, README, `.env.example`) |
+| Simple pages (login page, form, landing, portfolio, small widget) | Plain HTML + CSS + JavaScript, no build step |
+| Bigger frontend (routing, dashboards, many components) | React + Vite + Tailwind CSS |
+| Scripts, algorithms, automation, single files | Only the requested file(s) in the best-fitting language |
+
+- **Design level** is chosen from the wording of the request: `simple`, `polished` or `premium`
+- Plain HTML/CSS/JS and React projects get a **live preview**; other stacks are delivered as files with a download button (no browser preview)
+- File-only results appear as a file list with a direct download button per file
+
+### 4. Two-Agent Pipeline
+
+- **Planner Agent** — understands the request, answers questions and produces a structured JSON plan (stack, design level, steps, files)
+- **Coder Agent** — writes the files, then a **review** pass and an automatic **fix** pass; a **security check** runs for large projects
+- Output is streamed live; the user only sees friendly status lines, never agent names
+
+### 5. Credits, Limits & Usage
+
+- 1 credit = 1000 tokens
+- A daily spending limit and a daily credit top-up that resets at **12:00 AM IST**
+- A Usage page with the balance, today's usage, spend per project and recent activity
+
+### 6. Auth, Onboarding & Admin
+
+- Signup / login with JWT (Bearer token), 4-step onboarding, protected routes, blocked-user check
+- Admin panel for stats, user management, credits adjustment, block and delete
+- File uploads (jpg, jpeg, png, pdf, max 5 MB) with magic-byte scanning, stored on Cloudinary
+
+### 7. UI / UX
+
+- Dark theme by default with a light-theme toggle, fully responsive
+- Claude-style sidebar (New chat, Projects, account menu with credits, Settings, Usage and Log out)
+- Serif chat typography, live typewriter streaming and a "Running a command" status with a seconds counter
+
+## User Roles
+
+| Role  | Capabilities                                                                                       |
+| ----- | -------------------------------------------------------------------------------------------------- |
+| User  | Chat, build projects, preview/edit/download code, view usage, manage own profile                   |
+| Admin | Everything a user can do, plus platform stats, user list, credit adjustment, block and delete users |
+
+## Tech Stack
+
+**Frontend**
+
+- React 18 (Vite)
+- Tailwind CSS 4
+- Redux Toolkit — auth state
+- TanStack Query — server state & caching
+- Axios — REST calls (the AI stream uses `fetch` + `ReadableStream`)
+- React Router v6
+- Sandpack — in-browser live preview
+- JSZip — project download
+- react-hot-toast, lucide-react
+
+**Backend**
+
+- Node.js 20+ and Express 5
+- MongoDB + Mongoose 9
+- JWT (Bearer, 1 day) + bcryptjs
+- Zod — request validation
+- Helmet, CORS, express-rate-limit
+- Multer + Cloudinary — uploads with magic-byte file scan
+
+**AI / External Services**
+
+- Groq through the OpenAI SDK (Planner: `openai/gpt-oss-20b`, Coder: `openai/gpt-oss-120b`)
+- Switching to another OpenAI-compatible provider only needs `LLM_BASE_URL`, `LLM_API_KEY` and the model names in `.env`
+- Cloudinary for uploads
+
+## System Architecture
+
+```
+┌─────────────┐      ┌──────────────┐      ┌───────────────┐
+│   React     │◄────►│  Express API │◄────►│    MongoDB    │
+│  (Client)   │      │   (Server)   │      │  (Mongoose)   │
+└──────┬──────┘      └──────┬───────┘      └───────────────┘
+       │                    │
+       │ SSE stream         ├──────────────► LLM provider (Groq, OpenAI SDK)
+       │ (fetch)            │
+       │                    └──────────────► Cloudinary (uploads)
+       ▼
+┌──────────────┐
+│  Sandpack    │   live preview runs in the browser
+│  (preview)   │
+└──────────────┘
 ```
 
-Scripts: `npm run server` (start), `npm run dev` (watch), `npm run seed` (admin).
-Node 20+ required. Provider change (Groq -> OpenRouter) = only `LLM_BASE_URL`, `LLM_API_KEY` and model names in `.env`.
+## AI / Agent Flow
 
-## Auth
+```
+1. User sends a message in Chat or Builder
+        │
+        ▼
+2. Chat mode: a tiny classifier call decides  BUILD  or  CHAT
+        │
+        ├── CHAT  → Planner answers directly (streamed)
+        └── BUILD → Planner creates a JSON plan
+                    { stack, preview, designLevel, mode: new | edit, steps, files }
+        │
+        ▼
+3. Coder writes the files (streamed, file by file)
+        │
+        ▼
+4. Review pass → Fix pass → (Security check when the project is large)
+        │
+        ▼
+5. Files are saved (chat or project) + a version snapshot is created
+        │
+        ▼
+6. The client shows the Preview / Code panel, or a file list with downloads
+```
 
-Every protected route needs the header `Authorization: Bearer <token>`.
-The token is returned by `/auth/signup` and `/auth/login` (and `/auth/password`).
+- **Build mode** (Builder page) skips the classifier and goes straight to the plan
+- **Fix with AI** (`type: "fix"`) sends the preview error straight to the Coder
+- If a request is a different project or a different technology, the plan sets `mode: "new"` and the old files are replaced
 
-## API (29 endpoints, base `/api`)
+## Streaming Events (SSE)
 
-| Method | Endpoint | Access | Purpose |
-|---|---|---|---|
-| GET | `/health` | Public | Server + DB status |
-| POST | `/auth/signup` | Public | Create account (returns token) |
-| POST | `/auth/login` | Public | Login user/admin (returns token) |
-| GET | `/auth/me` | User | Current user |
-| PUT | `/auth/password` | User | Change password (returns new token) |
-| POST | `/users/onboarding` | User | name, role, goal, teamSize |
-| PATCH | `/users/profile` | User | Update name / onboarding fields |
-| GET | `/credits/usage` | User | Balance, daily usage, spending per project |
-| GET | `/projects` | User | My projects |
-| POST | `/projects` | User | New project |
-| GET | `/projects/:id` | User | Project with files |
-| PATCH | `/projects/:id` | User | Rename |
-| DELETE | `/projects/:id` | User | Delete project + chat |
-| PUT | `/projects/:id/files` | User | Save files edited in the editor |
-| GET | `/projects/:id/versions` | User | Version history |
-| POST | `/projects/:id/versions/:versionId/restore` | User | Roll back |
-| GET | `/projects/:id/chat` | User | Chat history (`?limit=`) |
-| DELETE | `/projects/:id/chat` | User | Clear chat |
-| POST | `/agent/stream` | User | **SSE** Chat / Build / Fix with AI |
-| POST | `/uploads` | User | Upload up to 3 files (jpg, jpeg, png, pdf, max 5 MB) |
-| DELETE | `/uploads/:publicId` | User | Delete own upload |
-| GET | `/admin/stats` | Admin | Totals |
-| GET | `/admin/users` | Admin | Users (`?search=&page=&limit=`) |
-| GET | `/admin/users/:id` | Admin | One user |
-| PATCH | `/admin/users/:id/credits` | Admin | `{ action: add/remove/set, amount }` |
-| PATCH | `/admin/users/:id/block` | Admin | `{ isActive: true/false }` |
-| DELETE | `/admin/users/:id` | Admin | Delete user + data |
-
-## `POST /agent/stream`
-
-Body: `{ projectId, message, mode: "chat" | "build", type?: "prompt" | "fix", errorLog?, attachments? }`
-(`attachments` = items returned by `/uploads`). Response is `text/event-stream`. Read it with `fetch` + `ReadableStream`
-(not axios) and send the Bearer header manually. Cancel = `AbortController.abort()` (credits for used tokens are still charged).
+`POST /api/agent/stream` returns `text/event-stream`. Read it with `fetch` + `ReadableStream` (not axios) and send the Bearer header manually. Cancel with `AbortController.abort()` — the tokens already used are still charged.
 
 | Event | Data |
-|---|---|
-| `meta` | `{ projectId, mode, type }` |
+| --- | --- |
+| `meta` | `{ projectId, chatId, mode, type }` |
 | `status` | `{ agent, message }` |
-| `token` | `{ agent: "planner" \| "coder", phase: "chat" \| "code" \| "review", text }` |
-| `plan` | `{ plan: { projectName, summary, complexity, mode, pages, components, steps, files } }` |
-| `agent_switch` | `{ from: "planner", to: "coder" }` |
+| `token` | `{ agent, phase, text }` |
+| `plan` | `{ plan }` |
+| `agent_switch` | `{ from, to }` |
 | `file_start` | `{ path, phase }` |
 | `file_chunk` | `{ path, text, phase }` (live code) |
-| `file_end` | `{ path, content, phase }` (final content of the file, use this to replace the live text) |
+| `file_end` | `{ path, content, phase }` (final file content) |
 | `warning` | `{ message }` |
 | `error` | `{ message }` |
 | `credits` | `{ credits, used }` |
-| `done` | `{ projectId, mode, aborted, failed, changedFiles, tokensUsed, creditsUsed, credits }` |
+| `done` | `{ projectId, chatId, mode, aborted, failed, changedFiles, tokensUsed, creditsUsed, credits }` |
 
-Flow: Chat mode -> Planner answers (question / code example / build request). A build request ends with a hidden
-handoff, then Planner (plan) -> Coder (code -> review -> fix, + security check when `complexity` is `large`).
-Build mode skips the chat step. `type: "fix"` sends the preview error straight to the Coder.
-Generated files are saved to the project automatically and a version snapshot is created.
+Request body: `{ projectId | chatId, message, mode: "chat" | "build", type?: "prompt" | "fix", errorLog?, attachments? }` — send either a `projectId` (Builder) or a `chatId` (normal chat).
 
-Generated projects are Vite + React + Tailwind (CDN). Use Sandpack template `vite-react` for the preview.
+## Credits & Usage
 
-## Folder structure
+- New users start with `DEFAULT_CREDITS` (200)
+- Every AI request costs tokens → credits (1 credit = 1000 tokens)
+- `DAILY_CREDIT_LIMIT` caps how much a user can spend per day
+- At the start of each new day (IST) the daily counter resets and credits are topped up to `DAILY_CREDITS` (credits are never lowered)
+- A build needs at least `BUILD_MIN_CREDITS` credits
+- The free tier of an LLM provider has its own limits too; keep the daily limits low if you share one API key between many users
+
+
+## Database Design (Key Collections)
+
+```
+User     { name, email, phone, password, userType (USER | ADMIN), isActive,
+           credits, dailyUsed, dailyDate, onboardingDone, onboarding{} }
+
+Project  { user, name, files[{ path, content }], versions[], messages[],
+           creditsUsed, tokensUsed }           ← only projects created by the user
+
+Chat     { user, title, messages[], files[{ path, content }], preview,
+           creditsUsed, tokensUsed }           ← normal chats (can also hold chat builds)
+```
+
+Messages store `role`, `agent`, `mode`, `content`, files and token/credit usage, so the Usage page can be built from them. Projects and chats are kept in separate collections on purpose.
+
+## Folder Structure
 
 ```
 Drexel-Ai/
-├── package.json, seed.js, .env.example, .gitignore
-└── server/
-    ├── server.js
-    ├── config/        dbConfig, cloudinaryConfig
-    ├── models/        userModel, projectModel, chatModel
-    ├── routes/        auth, user, credit, project, chat, agent, upload, admin, health
-    ├── controllers/   <domain>/<domain>Controller.js
-    ├── middleware/    auth, errorHandler, rateLimit, validate, credit,
-    │                  fileUpload, fileScan, cloudinary
-    └── agents/        plannerAgent, coderAgent, prompts, llmClient, fileParser
+├── package.json, seed.js, .gitignore
+├── server/
+│   ├── server.js
+│   ├── config/         dbConfig, cloudinaryConfig
+│   ├── models/         userModel, projectModel, chatModel
+│   ├── routes/         auth, user, credit, project, chat, chatList, agent, upload, admin, health
+│   ├── controllers/    <domain>/<domain>Controller.js
+│   ├── middleware/     auth, credit, errorHandler, rateLimit, validate,
+│   │                   fileUpload, fileScan, cloudinary
+│   └── agents/         plannerAgent, coderAgent, prompts, llmClient, fileParser
+└── Client/
+    ├── public/         logo + favicon
+    └── src/
+        ├── components/ layout, chat, builder, admin + shared UI
+        ├── pages/      Landing, Login, Signup, Onboarding, Chat, Projects,
+        │               Builder, Usage, Settings, Admin
+        ├── features/   Redux store + authSlice
+        ├── services/   auth, user, project, chat, credit, agent (SSE)
+        ├── hooks/      useAuthStatus, useUsage
+        ├── context/    ThemeContext
+        └── utils/      downloadFiles, typewriter
 ```
+
+## Getting Started
+
+```bash
+# Clone the repo
+git clone https://github.com/Yaasir-786/Drexel-Ai.git
+cd Drexel-Ai
+
+# Install dependencies (backend lives in the root, frontend in Client/)
+npm install
+cd Client && npm install && cd ..
+
+# Set up environment variables (see below) in a .env file in the root
+
+# Create the admin user
+npm run seed
+
+# Run backend (http://localhost:5000)
+npm run dev
+
+# Run frontend in a second terminal (http://localhost:5173)
+cd Client && npm run dev
+```
+
+The Vite dev server proxies `/api` to `http://localhost:5000`, so the frontend needs no `.env` file. Node 20+ is required.
+
+> The live preview loads its bundler from CodeSandbox, so the browser needs internet access.
+
+## Environment Variables
+
+**.env (project root)**
+
+```
+PORT=5000
+NODE_ENV=development
+CLIENT_URL=http://localhost:5173
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_jwt_secret
+JWT_EXPIRES_IN=1d
+
+# LLM provider
+LLM_BASE_URL=your_llm_url
+LLM_API_KEY=your_llm_api_key
+PLANNER_MODEL=your_llm_model
+CODER_MODEL=your_llm_model
+LLM_REASONING_EFFORT=medium
+
+# Optional limits
+CODER_MAX_TOKENS=12000
+REVIEW_MAX_TOKENS=8000
+PLANNER_MAX_TOKENS=2000
+
+# Credits
+DEFAULT_CREDITS=200
+DAILY_CREDITS=100
+DAILY_CREDIT_LIMIT=100
+BUILD_MIN_CREDITS=10
+
+# Admin (used by npm run seed)
+ADMIN_EMAIL=your_admin_email
+ADMIN_PASSWORD=your_admin_password
+
+# Cloudinary (uploads)
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+```
+
+## Roadmap
+
+- [ ] Auth, onboarding and role-based access (User / Admin)
+- [ ] Planner + Coder agents with review, fix and security check
+- [ ] Live streaming (SSE) with stop button
+- [ ] Normal chats with saved history (separate from projects)
+- [ ] Project Builder with preview, code editor, Fix with AI and ZIP download
+- [ ] Technology selection by the Planner (HTML/CSS/JS, React, other stacks)
+- [ ] Credits, daily limit and daily refill
+- [ ] Usage page connected to live data
+- [ ] Settings page (profile and password) connected to the API
+- [ ] Admin panel connected to the API
+- [ ] Version history UI (list and restore)
+- [ ] File attachments in chat (Cloudinary uploads)
+- [ ] Live code streaming inside the preview panel
+- [ ] More preview types (Vue, Svelte)
+- [ ] Deploy / publish a project to a public link (future)
+
+## Disclaimer
+
+Drexel-Ai is built for **educational and demonstration purposes**. AI-generated code can contain mistakes or security issues — always review and test it before using it anywhere important. Never commit your API keys or `.env` file to GitHub.
+
+## About
+
+Drexel-Ai is built and maintained by **Yaasir Sheikh**
+
+📸 Instagram: @beingyaasir
+💻 GitHub: Yaasir-786
