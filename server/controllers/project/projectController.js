@@ -1,5 +1,4 @@
 import Project, { PROJECT_LIMITS } from "../../models/projectModel.js";
-import Chat from "../../models/chatModel.js";
 
 const getAllProjects = async (req, res) => {
   const projects = await Project.find({ user: req.user._id })
@@ -17,8 +16,6 @@ const createProject = async (req, res) => {
     ...(name && { name }),
   });
 
-  await Chat.create({ project: project._id, user: req.user._id });
-
   res.status(201).json({
     _id: project._id,
     name: project.name,
@@ -32,7 +29,7 @@ const getSingleProject = async (req, res) => {
   const project = await Project.findOne({
     _id: req.params.id,
     user: req.user._id,
-  }).select("-versions");
+  }).select("-versions -messages");
 
   if (!project) {
     res.status(404);
@@ -53,7 +50,7 @@ const updateProject = async (req, res) => {
     throw new Error("Project Not Found...");
   }
 
-  const project = await Project.findById(req.params.id).select("-versions");
+  const project = await Project.findById(req.params.id).select("-versions -messages");
 
   res.status(200).json(project);
 };
@@ -68,8 +65,6 @@ const deleteProject = async (req, res) => {
     res.status(404);
     throw new Error("Project Not Found...");
   }
-
-  await Chat.deleteOne({ project: project._id });
 
   res.status(200).json({ message: "Project Deleted SuccessFully..." });
 };
@@ -97,7 +92,7 @@ const saveFiles = async (req, res) => {
     throw new Error("Project Not Found...");
   }
 
-  const project = await Project.findById(req.params.id).select("-versions");
+  const project = await Project.findById(req.params.id).select("-versions -messages");
 
   res.status(200).json(project);
 };
@@ -158,7 +153,7 @@ const restoreVersion = async (req, res) => {
     },
   );
 
-  const restored = await Project.findById(project._id).select("-versions");
+  const restored = await Project.findById(project._id).select("versions");
 
   res.status(200).json(restored);
 };

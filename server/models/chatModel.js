@@ -12,7 +12,7 @@ const attachmentSchema = new mongoose.Schema(
   { _id: false },
 );
 
-const messageSchema = new mongoose.Schema(
+export const messageSchema = new mongoose.Schema(
   {
     role: {
       type: String,
@@ -60,10 +60,6 @@ const fileSchema = new mongoose.Schema(
 
 const chatSchema = new mongoose.Schema(
   {
-    project: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Project",
-    },
     title: {
       type: String,
       default: "New chat",
@@ -94,11 +90,6 @@ const chatSchema = new mongoose.Schema(
   {
     timestamps: true,
   },
-);
-
-chatSchema.index(
-  { project: 1 },
-  { unique: true, partialFilterExpression: { project: { $type: "objectId" } } },
 );
 
 const Chat = mongoose.model("Chat", chatSchema);

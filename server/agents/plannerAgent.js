@@ -110,8 +110,18 @@ export const normalizePlan = (raw, { hasFiles, fallback }) => {
         : "",
     summary,
     complexity: plan.complexity === "large" ? "large" : "small",
-    mode: hasFiles ? "edit" : "new",
+    mode: hasFiles && plan.mode !== "new" ? "edit" : "new",
     preview: plan.preview !== false,
+    stack:
+      typeof plan.stack === "string" ? plan.stack.trim().slice(0, 120) : "",
+    designLevel:
+      ["simple", "polished", "premium"].includes(plan.designLevel)
+        ? plan.designLevel
+        : "polished",
+    designNotes:
+      typeof plan.designNotes === "string"
+        ? plan.designNotes.trim().slice(0, 400)
+        : "",
     pages: asList(plan.pages, 15, 80),
     components: asList(plan.components, 25, 80),
     steps: steps.length ? steps : [summary || "Build what the user asked for"],

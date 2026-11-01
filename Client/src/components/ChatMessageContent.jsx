@@ -44,7 +44,7 @@ export default function ChatMessageContent({ content }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 text-xs leading-relaxed">
+    <div className="flex flex-col gap-3 leading-relaxed">
       {parts.map((part, index) => {
         if (part.type === 'code') {
           return (
@@ -59,7 +59,7 @@ export default function ChatMessageContent({ content }) {
         // Render paragraphs and formatted inline text
         const paragraphs = part.text.split('\n\n');
         return (
-          <div key={index} className="space-y-2">
+          <div key={index} className="space-y-3">
             {paragraphs.map((p, pIdx) => {
               if (!p.trim()) return null;
               // Check for bullet lists
@@ -81,14 +81,14 @@ export default function ChatMessageContent({ content }) {
               // Check for headings
               if (p.trim().startsWith('### ')) {
                 return (
-                  <h4 key={pIdx} className="font-semibold text-ink text-sm mt-2 mb-1">
+                  <h4 key={pIdx} className="font-semibold text-ink text-[1.05em] mt-2 mb-1">
                     {renderInlineFormatted(p.replace(/^###\s+/, ''))}
                   </h4>
                 );
               }
               if (p.trim().startsWith('## ')) {
                 return (
-                  <h3 key={pIdx} className="font-bold text-ink text-sm mt-3 mb-1">
+                  <h3 key={pIdx} className="font-bold text-ink text-[1.15em] mt-3 mb-1">
                     {renderInlineFormatted(p.replace(/^##\s+/, ''))}
                   </h3>
                 );
@@ -128,7 +128,7 @@ function renderInlineFormatted(text) {
       tokens.push(
         <code
           key={`c-${keyCounter++}`}
-          className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-surface border border-line text-[#0099FF] dark:text-blue-400 font-semibold"
+          className="font-mono text-[0.85em] px-1.5 py-0.5 rounded bg-surface border border-line text-[#0099FF] dark:text-blue-400 font-semibold"
         >
           {token.slice(1, -1)}
         </code>

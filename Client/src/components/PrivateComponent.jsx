@@ -12,7 +12,7 @@ export default function PrivateComponent() {
   const { user } = useSelector((state) => state.auth);
   const dispatch = useDispatch();
 
-  const { data, isError } = useQuery({
+  const { data, isError, error } = useQuery({
     queryKey: ["profile", user?.token],
     queryFn: () => authService.getMyProfile(user?.token),
     enabled: !!user?.token,
@@ -26,11 +26,11 @@ export default function PrivateComponent() {
   }, [data, dispatch]);
 
   useEffect(() => {
-    if (isError) {
+    if (isError && [401, 403].includes(error?.response?.status)) {
       localStorage.removeItem("user");
       dispatch(logoutUser());
     }
-  }, [isError, dispatch]);
+  }, [isError, error, dispatch]);
 
   if (checkingUser) {
     return <LoaderScreen />;

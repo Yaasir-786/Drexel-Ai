@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
+import credit from "./creditMiddleware.js";
 
 // shared by forUser and forAdmin: Bearer token -> verified, active user
 const getUserFromToken = async (req, res) => {
@@ -41,7 +42,12 @@ const getUserFromToken = async (req, res) => {
     throw new Error("Password Was Changed, Please Login Again...");
   }
 
-  return user;
+  try {
+    return await credit.refreshDaily(user);
+  } catch (error) {
+    console.error("Daily refresh failed:", error.message);
+    return user;
+  }
 };
 
 const forUser = async (req, res, next) => {

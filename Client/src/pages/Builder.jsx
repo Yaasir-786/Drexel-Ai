@@ -196,6 +196,7 @@ export default function Builder() {
         toast.error(error.message || "Something went wrong");
       }
     } finally {
+      queryClient.invalidateQueries({ queryKey: ["usage"] });
       setIsGenerating(false);
       setIsWritingFiles(false);
       setMessages((prev) => {

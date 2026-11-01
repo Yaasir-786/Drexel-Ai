@@ -1,8 +1,11 @@
 import User from "../models/userModel.js";
 
-const todayKey = () => new Date().toISOString().slice(0, 10);
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const todayKey = () => new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
 
 const dailyLimit = () => Number(process.env.DAILY_CREDIT_LIMIT) || 100;
+
+const dailyCredits = () => Number(process.env.DAILY_CREDITS) || 100;
 
 // 1 credit = 1000 tokens by default (CREDITS_PER_1K_TOKENS in .env)
 const tokensToCredits = (tokens) => {
@@ -71,12 +74,26 @@ const deductCredits = async (userId, credits, tokens = 0) => {
   return User.findById(userId);
 };
 
+// new IST day: reset the daily counter and top up credits to the daily amount (credits are never lowered)
+const refreshDaily = async (user) => {
+  const today = todayKey();
+  if (user.dailyDate === today) return user;
+  await User.updateOne(
+    { _id: user._id, dailyDate: { $ne: today } },
+    [{ $set: { dailyDate: today, dailyUsed: 0, credits: { $max: ["$credits", dailyCredits()] } } }],
+    { updatePipeline: true },
+  );
+  return User.findById(user._id);
+};
+
 const credit = {
   checkCredits,
   deductCredits,
   tokensToCredits,
   todayKey,
   dailyLimit,
+  dailyCredits,
+  refreshDaily,
   round2,
 };
 

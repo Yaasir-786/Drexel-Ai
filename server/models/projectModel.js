@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { messageSchema } from "./chatModel.js";
 
 export const DEFAULT_PROJECT_NAME = "Untitled Project";
 
@@ -51,6 +52,9 @@ const projectSchema = new mongoose.Schema(
     },
 
     files: [fileSchema],
+    messages: [messageSchema],
+    creditsUsed: { type: Number, default: 0 },
+    tokensUsed: { type: Number, default: 0 },
     versions: [versionSchema],
   },
   {

@@ -10,6 +10,7 @@
   --color-accent: #0099FF;
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
   --radius-btn: 12px;
   --radius-card: 16px;
 }

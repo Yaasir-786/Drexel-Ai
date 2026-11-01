@@ -24,7 +24,7 @@ const getClient = () => {
       apiKey: process.env.LLM_API_KEY,
       baseURL: process.env.LLM_BASE_URL || "https://api.groq.com/openai/v1",
       maxRetries: 1,
-      timeout: 120000,
+      timeout: 240000,
     });
   }
 
@@ -33,9 +33,9 @@ const getClient = () => {
 
 export const limits = () => ({
   chat: Number(process.env.CHAT_MAX_TOKENS) || 1500,
-  planner: Number(process.env.PLANNER_MAX_TOKENS) || 1500,
-  coder: Number(process.env.CODER_MAX_TOKENS) || 6000,
-  review: Number(process.env.REVIEW_MAX_TOKENS) || 4000,
+  planner: Number(process.env.PLANNER_MAX_TOKENS) || 2000,
+  coder: Number(process.env.CODER_MAX_TOKENS) || 12000,
+  review: Number(process.env.REVIEW_MAX_TOKENS) || 8000,
 });
 
 export const pickModel = (agent, useVision = false) => {

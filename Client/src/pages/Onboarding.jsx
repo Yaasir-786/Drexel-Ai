@@ -1,21 +1,48 @@
 // Onboarding flow: full-screen 4-step wizard with single question per step
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import userService from '../services/userService';
+import { getProfile } from '../features/auth/authSlice';
 import ThemeToggle from '../components/ThemeToggle';
 import Button from '../components/Button';
+import { ArrowLeft, CheckCircle2 } from 'lucide-react';
 
 export default function Onboarding() {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const { user } = useSelector((state) => state.auth);
 
   // Wizard state (1 to 4)
   const [step, setStep] = useState(1);
 
   // Form responses
-  const [name, setName] = useState('');
+  const [name, setName] = useState(user?.name || '');
   const [role, setRole] = useState('');
   const [projectIdea, setProjectIdea] = useState('');
   const [teamSize, setTeamSize] = useState('');
+
+  const { mutate, data, isPending, isError, isSuccess, error } = useMutation({
+    mutationFn: (payload) => userService.completeOnboarding(user.token, payload),
+  });
+
+  useEffect(() => {
+    if (data && isSuccess) {
+      dispatch(getProfile(data));
+      localStorage.setItem("user", JSON.stringify({ ...user, ...data }));
+      toast.success("Welcome to Drexel-Ai");
+      navigate("/chat");
+    }
+    if (isError && error) {
+      toast.error(error.response?.data?.message || "Something went wrong");
+    }
+  }, [data, isSuccess, isError, error, dispatch, navigate]);
+
+  useEffect(() => {
+    if (user?.onboardingDone) navigate("/chat", { replace: true });
+  }, [user?.onboardingDone, navigate]);
 
   // Options for step 2 and step 4
   const roleOptions = ['Student', 'Developer', 'Designer', 'Founder', 'Other'];
@@ -34,8 +61,7 @@ export default function Onboarding() {
     if (step < 4) {
       setStep(step + 1);
     } else {
-      // Step 4 "Finish" navigates to /chat
-      navigate('/chat');
+      mutate({ name: name.trim(), role, goal: projectIdea.trim(), teamSize });
     }
   };
 
@@ -77,8 +103,7 @@ export default function Onboarding() {
               step === 1
                 ? 'opacity-30 cursor-not-allowed text-muted'
                 : 'text-muted hover:text-ink cursor-pointer'
-            }`}
-          >
+            }`}>
             <ArrowLeft size={18} />
             Back
           </button>
@@ -129,8 +154,7 @@ export default function Onboarding() {
                         isSelected
                           ? 'border-[#0099FF] bg-blue-50/60 dark:bg-blue-950/40 text-ink'
                           : 'border-line bg-card text-muted hover:bg-surface hover:text-ink'
-                      }`}
-                    >
+                      }`}>
                       <span>{option}</span>
                       {isSelected && (
                         <CheckCircle2 size={20} className="text-[#0099FF]" />
@@ -177,8 +201,7 @@ export default function Onboarding() {
                         isSelected
                           ? 'border-[#0099FF] bg-blue-50/60 dark:bg-blue-950/40 text-ink'
                           : 'border-line bg-card text-muted hover:bg-surface hover:text-ink'
-                      }`}
-                    >
+                      }`}>
                       <span>{option}</span>
                       {isSelected && (
                         <CheckCircle2 size={20} className="text-[#0099FF]" />
@@ -196,10 +219,9 @@ export default function Onboarding() {
               type="button"
               variant="primary"
               onClick={handleNext}
-              disabled={!isStepValid()}
-              className="px-10 text-base"
-            >
-              {step === 4 ? 'Finish' : 'Continue'}
+              disabled={!isStepValid() || isPending}
+              className="px-10 text-base">
+              {isPending ? 'Saving…' : step === 4 ? 'Finish' : 'Continue'}
             </Button>
           </div>
         </div>

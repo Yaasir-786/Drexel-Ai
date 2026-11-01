@@ -114,7 +114,7 @@ export const runCoderAgent = async ({ plan, request, errorLog, files, signal, se
   if (result.size === 0) return finish(false);
 
   // ---- review / debug / security pass ----
-  const reviewBudget = Number(process.env.REVIEW_MAX_INPUT_CHARS) || 20000;
+  const reviewBudget = Number(process.env.REVIEW_MAX_INPUT_CHARS) || 40000;
   const reviewList = [...result].map(([path, content]) => ({ path, content }));
   const hasPackageJson = result.has("/package.json");
   const existingPackage = files.find((file) => file.path === "/package.json");
@@ -141,6 +141,7 @@ export const runCoderAgent = async ({ plan, request, errorLog, files, signal, se
       {
         role: "user",
         content: [
+          `STACK: ${plan.stack || ""}`,
           `SECURITY_CHECK: ${securityOn ? "ON" : "OFF"}`,
           `PREVIEW: ${plan.preview === false ? "false" : "true"}`,
           `PLAN SUMMARY: ${plan.summary}`,

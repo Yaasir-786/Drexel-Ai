@@ -6,59 +6,48 @@ const getUsage = async (req, res) => {
   const user = req.user;
 
   const chats = await Chat.find({ user: user._id })
-    .select("project title creditsUsed tokensUsed messages.mode messages.agent messages.creditsUsed messages.tokensUsed messages.createdAt")
+    .select("title creditsUsed tokensUsed messages.mode messages.agent messages.creditsUsed messages.tokensUsed messages.createdAt")
     .lean();
 
-  // credits spent per project / chat
-  const byProject = chats
-    .filter((chat) => chat.creditsUsed > 0)
+  const projects = await Project.find({ user: user._id })
+    .select("name creditsUsed tokensUsed messages.mode messages.agent messages.creditsUsed messages.tokensUsed messages.createdAt")
+    .lean();
+
+  const items = [
+    ...chats.map((c) => ({ ...c, projectId: null, name: c.title || "Chat" })),
+    ...projects.map((p) => ({ ...p, projectId: p._id, name: p.name })),
+  ];
+
+  const byProject = items
+    .filter((i) => i.creditsUsed > 0)
     .sort((a, b) => b.creditsUsed - a.creditsUsed)
     .slice(0, 20);
 
-  // latest 20 messages that cost credits
-  const recent = chats
-    .flatMap((chat) =>
-      chat.messages
-        .filter((message) => message.creditsUsed > 0)
-        .map((message) => ({ ...message, project: chat.project })),
-    )
+  const recent = items
+    .flatMap((i) => (i.messages || []).filter((m) => m.creditsUsed > 0).map((m) => ({ ...m, projectId: i.projectId, projectName: i.name })))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 20);
 
-  const ids = [
-    ...new Set(
-      [...byProject.map((c) => c.project), ...recent.map((m) => m.project)]
-        .filter(Boolean)
-        .map(String),
-    ),
-  ];
-  const projects = ids.length
-    ? await Project.find({ _id: { $in: ids } }).select("name")
-    : [];
-  const names = new Map(projects.map((p) => [String(p._id), p.name]));
-
-  const usedToday = user.dailyDate === credit.todayKey() ? user.dailyUsed : 0;
-
   res.status(200).json({
     credits: credit.round2(user.credits),
-    dailyUsed: credit.round2(usedToday),
+    dailyUsed: credit.round2(user.dailyUsed),
     dailyLimit: credit.dailyLimit(),
     totalCreditsUsed: credit.round2(user.totalCreditsUsed),
     totalTokensUsed: user.totalTokensUsed,
-    byProject: byProject.map((chat) => ({
-      projectId: chat.project || null,
-      name: chat.project ? (names.get(String(chat.project)) || "Untitled Project") : (chat.title || "Chat"),
-      credits: credit.round2(chat.creditsUsed),
-      tokens: chat.tokensUsed,
+    byProject: byProject.map((i) => ({
+      projectId: i.projectId,
+      name: i.name,
+      credits: credit.round2(i.creditsUsed),
+      tokens: i.tokensUsed,
     })),
-    recent: recent.map((message) => ({
-      projectId: message.project || null,
-      projectName: message.project ? (names.get(String(message.project)) || "Untitled Project") : "Chat",
-      mode: message.mode,
-      agent: message.agent,
-      creditsUsed: credit.round2(message.creditsUsed),
-      tokensUsed: message.tokensUsed,
-      createdAt: message.createdAt,
+    recent: recent.map((m) => ({
+      projectId: m.projectId,
+      projectName: m.projectName,
+      mode: m.mode,
+      agent: m.agent,
+      creditsUsed: credit.round2(m.creditsUsed),
+      tokensUsed: m.tokensUsed,
+      createdAt: m.createdAt,
     })),
   });
 };

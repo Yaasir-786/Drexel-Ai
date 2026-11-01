@@ -7,12 +7,10 @@ import toast from "react-hot-toast";
 import {
   Send,
   Paperclip,
-  Sparkles,
   Menu,
   Coins,
   Square,
   FolderPlus,
-  ArrowRight,
   X,
   Eye,
 } from "lucide-react";
@@ -29,32 +27,6 @@ import { downloadZip } from "../utils/downloadFiles";
 import { getProfile } from "../features/auth/authSlice";
 import { createTypewriter } from "../utils/typewriter";
 import RunStatus from "../components/RunStatus";
-
-const PROMPT_SUGGESTIONS = [
-  {
-    title: "Custom React useDebounce hook",
-    subtitle: "Hook with cleanup and delay timer",
-    prompt:
-      "Can you show me an example of a useDebounce hook in React with explanation and usage?",
-  },
-  {
-    title: "Tailwind 4 responsive grid",
-    subtitle: "Auto-fit layout with cards",
-    prompt: "How do I create a responsive auto-fit grid in Tailwind CSS?",
-  },
-  {
-    title: "React 19 Server Components",
-    subtitle: "Difference from Client Components",
-    prompt:
-      "Explain the core difference between React Server Components and Client Components with code examples.",
-  },
-  {
-    title: "Build a Storefront App",
-    subtitle: "Planner and Coder architecture",
-    prompt:
-      "I want to build an e-commerce storefront for developer accessories with cart and product grid.",
-  },
-];
 
 export default function Chat() {
   const { id } = useParams();
@@ -240,6 +212,7 @@ export default function Chat() {
         toast.error(error.message || "Something went wrong");
       }
     } finally {
+      queryClient.invalidateQueries({ queryKey: ["usage"] });
       setIsGenerating(false);
       setIsWritingFiles(false);
       setMessages((prev) => {
@@ -283,7 +256,7 @@ export default function Chat() {
   return (
     <div className="h-screen bg-page text-ink flex overflow-hidden">
       {/* Desktop Fixed Left Sidebar */}
-      <div className="hidden lg:block fixed inset-y-0 left-0 w-[264px] z-40">
+      <div className="hidden lg:block fixed inset-y-0 left-0 w-[320px] z-40">
         <Sidebar />
       </div>
 
@@ -293,7 +266,7 @@ export default function Chat() {
           className="fixed inset-0 bg-black/60 z-50 lg:hidden backdrop-blur-xs animate-in fade-in"
           onClick={() => setIsMobileMenuOpen(false)}>
           <div
-            className="w-[264px] h-full"
+            className="w-[320px] h-full"
             onClick={(e) => e.stopPropagation()}>
             <Sidebar onItemClick={() => setIsMobileMenuOpen(false)} />
           </div>
@@ -301,7 +274,7 @@ export default function Chat() {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex min-w-0 lg:pl-[264px] h-screen overflow-hidden">
+      <div className="flex-1 flex min-w-0 lg:pl-[320px] h-screen overflow-hidden">
         {/* Chat Stream Column */}
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
           {/* Chat Header */}
@@ -317,10 +290,10 @@ export default function Chat() {
 
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs font-semibold text-ink">
+                <span className="text-base font-semibold text-ink">
                   {chatTitle}
                 </span>
-                <span className="text-[11px] text-muted hidden sm:inline">
+                <span className="text-sm text-muted hidden sm:inline">
                   • General purpose code and chat
                 </span>
               </div>
@@ -363,39 +336,26 @@ export default function Chat() {
             <div className="w-full max-w-[800px] flex-1 flex flex-col justify-between">
               {messages.length === 0 ? (
                 <div className="my-auto py-8 flex flex-col items-center text-center">
-                  <div className="w-14 h-14 rounded-2xl bg-primary-gradient flex items-center justify-center text-white shadow-lg mb-4">
-                    <Sparkles size={28} />
+                  <div className="relative -top-2.5 w-20 h-20 mb-3 shrink-0">
+                    <div
+                      className="absolute left-1/2 top-1/2 w-[400%] h-[400%] -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
+                      style={{ background: "radial-gradient(circle, rgba(59,140,255,0.45) 0%, rgba(59,140,255,0.22) 30%, rgba(59,140,255,0) 70%)" }}
+                    />
+                    <img
+                      src="/drexel-logo.svg"
+                      alt="Drexel-Ai"
+                      draggable={false}
+                      className="relative w-full h-full"
+                      style={{ filter: "drop-shadow(0 0 8px rgba(59,140,255,0.55))" }}
+                    />
                   </div>
-                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-ink">
+                  <h1 className="relative font-serif text-2xl md:text-3xl font-bold tracking-tight text-ink">
                     How can I help you build today?
                   </h1>
-                  <p className="text-xs md:text-sm text-muted mt-2 max-w-md">
+                  <p className="relative font-serif text-base text-muted mt-2 max-w-md">
                     Ask programming questions, request architecture plans, or generate
                     reusable React components and Tailwind snippets.
                   </p>
-
-                  {/* Prompt suggestion cards (2x2 grid) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full mt-8 text-left">
-                    {PROMPT_SUGGESTIONS.map((item, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => handleSendPrompt(item.prompt)}
-                        className="p-4 rounded-2xl bg-card border border-line hover:border-[#0099FF] shadow-xs cursor-pointer group transition-all">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-semibold text-ink group-hover:text-[#0099FF] transition-colors">
-                            {item.title}
-                          </span>
-                          <ArrowRight
-                            size={14}
-                            className="text-muted group-hover:text-[#0099FF] group-hover:translate-x-0.5 transition-all"
-                          />
-                        </div>
-                        <p className="text-[11px] text-muted mt-1">
-                          {item.subtitle}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-6 py-4">
@@ -412,16 +372,14 @@ export default function Chat() {
                             isUser ? "flex-row-reverse self-end max-w-[85%]" : "self-start max-w-[95%]"
                           }`}>
                           {!isUser && (
-                            <div className="w-8 h-8 rounded-xl bg-primary-gradient flex items-center justify-center text-white shrink-0 mt-0.5 shadow-xs">
-                              <Sparkles size={16} />
-                            </div>
+                            <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
                           )}
 
                           <div
                             className={`${
                               isUser
-                                ? "rounded-2xl p-4 text-xs md:text-sm shadow-xs bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white whitespace-pre-wrap"
-                                : "min-w-0 pt-1 text-xs md:text-sm text-ink leading-relaxed"
+                                ? "font-serif rounded-2xl p-4 text-base shadow-xs bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white whitespace-pre-wrap"
+                                : "min-w-0 pt-1 font-serif text-base text-ink leading-relaxed"
                             }`}>
                             {isUser && msg.attachments?.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 mb-2 pb-2 border-b border-white/20">
@@ -466,9 +424,7 @@ export default function Chat() {
                   {/* Status indicator during AI generation */}
                   {showStatus && (
                     <div className="self-start max-w-[95%] flex gap-3.5 items-center">
-                      <div className="w-8 h-8 flex items-center justify-center text-muted shrink-0">
-                        <Sparkles size={16} className="text-emerald-500" />
-                      </div>
+                      <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
                       <RunStatus label={label} />
                     </div>
                   )}
@@ -479,8 +435,8 @@ export default function Chat() {
           </div>
 
           {/* Pinned Bottom Input Card */}
-          <div className="p-4 md:p-6 bg-page flex justify-center shrink-0">
-            <div className="w-full max-w-[800px] bg-card border border-line focus-within:border-[#0099FF] rounded-2xl p-3 md:p-3.5 shadow-md transition-colors flex flex-col">
+          <div className="p-3 md:p-4 bg-page flex justify-center shrink-0">
+            <div className="w-full max-w-[800px] bg-card border border-line focus-within:border-[#0099FF] rounded-2xl p-2.5 md:p-3 shadow-md transition-colors flex flex-col">
               {/* Attached file chips */}
               {attachments.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pb-2 border-b border-line mb-2">
@@ -502,7 +458,7 @@ export default function Chat() {
 
               {/* Input textarea */}
               <textarea
-                rows={2}
+                rows={1}
                 value={inputPrompt}
                 onChange={(e) => setInputPrompt(e.target.value)}
                 onKeyDown={(e) => {
@@ -512,11 +468,11 @@ export default function Chat() {
                   }
                 }}
                 placeholder="Message Drexel AI... (Ask for code snippets, programming questions, or app concepts)"
-                className="w-full bg-transparent text-ink text-xs md:text-sm outline-none resize-none leading-relaxed placeholder:text-muted"
+                className="w-full bg-transparent font-serif text-ink text-base outline-none resize-none leading-relaxed placeholder:text-muted field-sizing-content max-h-40 overflow-y-auto"
               />
 
               {/* Bottom Actions Row */}
-              <div className="flex items-center justify-between pt-2 border-t border-line/60 mt-1">
+              <div className="flex items-center justify-between pt-1.5 border-t border-line/60 mt-0.5">
                 <div className="flex items-center gap-2">
                   <input
                     type="file"
@@ -550,7 +506,7 @@ export default function Chat() {
                   <Button
                     variant="danger"
                     onClick={() => controllerRef.current?.abort()}
-                    className="h-8 px-3 text-xs"
+                    className="h-9! px-3 text-xs"
                     icon={Square}>
                     Stop
                   </Button>
@@ -559,7 +515,7 @@ export default function Chat() {
                     variant="primary"
                     onClick={() => handleSendPrompt()}
                     disabled={!inputPrompt.trim()}
-                    className="h-8 px-3.5 text-xs shadow-xs"
+                    className="h-9! px-3.5 text-xs shadow-xs"
                     icon={Send}>
                     Send
                   </Button>

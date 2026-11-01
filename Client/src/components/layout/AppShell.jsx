@@ -15,7 +15,7 @@ export default function AppShell({
   return (
     <div className="min-h-screen bg-page text-ink flex">
       {/* Desktop Fixed Sidebar (1024px and up) */}
-      <div className="hidden lg:block fixed inset-y-0 left-0 w-[264px] z-40">
+      <div className="hidden lg:block fixed inset-y-0 left-0 w-[320px] z-40">
         <Sidebar />
       </div>
 
@@ -24,7 +24,7 @@ export default function AppShell({
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
         position="left"
-        width="w-[280px]"
+        width="w-[320px]"
       >
         <div className="h-full -m-5">
           <Sidebar onItemClick={() => setIsMobileMenuOpen(false)} />
@@ -32,7 +32,7 @@ export default function AppShell({
       </Drawer>
 
       {/* Main content wrapper (offset by sidebar width on desktop) */}
-      <div className="flex-1 lg:pl-[264px] flex flex-col min-w-0">
+      <div className="flex-1 lg:pl-[320px] flex flex-col min-w-0">
         <TopBar onOpenMobileMenu={() => setIsMobileMenuOpen(true)} />
 
         {/* Page Content Container: max width 1120px, left-aligned */}

@@ -5,7 +5,6 @@ import {
   Paperclip,
   X,
   Square,
-  Sparkles,
 } from 'lucide-react';
 import Button from '../Button';
 import Badge from '../Badge';
@@ -83,9 +82,21 @@ export default function ChatPanel({
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted">
-            <Sparkles size={28} className="text-[#0099FF] mb-2" />
-            <h3 className="text-sm font-semibold text-ink">What do you want to build?</h3>
-            <p className="text-xs mt-1 max-w-xs">
+            <div className="relative -top-2.5 w-14 h-14 mb-2 shrink-0">
+              <div
+                className="absolute left-1/2 top-1/2 w-[400%] h-[400%] -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
+                style={{ background: "radial-gradient(circle, rgba(59,140,255,0.45) 0%, rgba(59,140,255,0.22) 30%, rgba(59,140,255,0) 70%)" }}
+              />
+              <img
+                src="/drexel-logo.svg"
+                alt="Drexel-Ai"
+                draggable={false}
+                className="relative w-full h-full"
+                style={{ filter: "drop-shadow(0 0 8px rgba(59,140,255,0.55))" }}
+              />
+            </div>
+            <h3 className="relative text-sm font-semibold text-ink">What do you want to build?</h3>
+            <p className="relative text-xs mt-1 max-w-xs">
               Ask questions for code snippets or describe your application to generate live components.
             </p>
           </div>
@@ -101,7 +112,7 @@ export default function ChatPanel({
               return (
                 <div
                   key={index}
-                  className="self-end max-w-[85%] bg-[#0099FF] text-white rounded-2xl rounded-tr-xs px-4 py-2.5 text-xs shadow-xs"
+                  className="self-end max-w-[85%] bg-[#0099FF] text-white rounded-2xl rounded-tr-xs px-4 py-2.5 font-serif text-sm shadow-xs"
                 >
                   <p className="whitespace-pre-wrap">{msg.text}</p>
                   {msg.attachments?.length > 0 && (
@@ -127,10 +138,8 @@ export default function ChatPanel({
 
               return (
                 <div key={index} className="self-start max-w-[95%] w-full flex gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-primary-gradient flex items-center justify-center text-white shrink-0 mt-0.5 shadow-xs">
-                    <Sparkles size={16} />
-                  </div>
-                  <div className="flex-1 min-w-0 pt-1 text-xs text-ink leading-relaxed">
+                  <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
+                  <div className="flex-1 min-w-0 pt-1 font-serif text-sm text-ink leading-relaxed">
                     <ChatMessageContent content={responseText} />
                   </div>
                 </div>
@@ -144,9 +153,7 @@ export default function ChatPanel({
         {/* Clean, user-friendly status message based on current processing state */}
         {showStatus && (
           <div className="self-start max-w-[95%] flex gap-3 items-center pt-1">
-            <div className="w-8 h-8 flex items-center justify-center text-muted shrink-0">
-              <Sparkles size={16} className="text-emerald-500" />
-            </div>
+            <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
             <RunStatus label={label} />
           </div>
         )}
@@ -156,7 +163,7 @@ export default function ChatPanel({
       {/* Input Area Pinned at the Bottom */}
       <div className="p-4 border-t border-line bg-card shrink-0 flex flex-col gap-2">
         <textarea
-          rows={3}
+          rows={2}
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={(e) => {
@@ -170,7 +177,7 @@ export default function ChatPanel({
               ? 'Ask any programming question or request a code snippet...'
               : 'Describe changes or application to build...'
           }
-          className="w-full p-2.5 text-xs rounded-xl border border-line bg-surface text-ink outline-none focus:ring-2 focus:ring-[#0099FF] resize-none"
+          className="w-full p-2.5 font-serif text-sm rounded-xl border border-line bg-surface text-ink outline-none focus:ring-2 focus:ring-[#0099FF] resize-none"
         />
 
         {/* Attachments */}
@@ -250,7 +257,7 @@ export default function ChatPanel({
             <Button
               variant="danger"
               onClick={onStopGenerating}
-              className="h-9 px-4 text-xs"
+              className="h-9! px-4 text-xs"
               icon={Square}
             >
               Stop
@@ -260,7 +267,7 @@ export default function ChatPanel({
               variant="primary"
               onClick={handleSend}
               disabled={!inputText.trim()}
-              className="h-9 px-4 text-xs"
+              className="h-9! px-4 text-xs"
               icon={Send}
             >
               Send

@@ -4,7 +4,6 @@ import Project from "../../models/projectModel.js";
 const getChats = async (req, res) => {
   const chats = await Chat.find({
     user: req.user._id,
-    $or: [{ project: null }, { project: { $exists: false } }],
   })
     .select("_id title createdAt updatedAt preview")
     .sort({ updatedAt: -1 });
@@ -62,35 +61,30 @@ const deleteChat = async (req, res) => {
 };
 
 const getChat = async (req, res) => {
-  const project = await Project.findOne({ _id: req.params.id, user: req.user._id }).select("_id name");
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
 
+  const project = await Project.findOne({ _id: req.params.id, user: req.user._id }).select("name files messages").lean();
   if (!project) {
     res.status(404);
     throw new Error("Project Not Found...");
   }
-
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 200);
-
-  const chat = await Chat.findOne({ project: project._id, user: req.user._id }).lean();
 
   res.status(200).json({
     _id: project._id,
     title: project.name,
-    messages: chat ? chat.messages.slice(-limit) : [],
-    files: (chat && chat.files) || [],
-    preview: chat ? chat.preview !== false : true,
+    messages: (project.messages || []).slice(-limit),
+    files: project.files || [],
+    preview: true,
   });
 };
 
 const clearChat = async (req, res) => {
-  const project = await Project.findOne({ _id: req.params.id, user: req.user._id }).select("_id");
+  const result = await Project.updateOne({ _id: req.params.id, user: req.user._id }, { $set: { messages: [] } });
 
-  if (!project) {
+  if (result.matchedCount === 0) {
     res.status(404);
     throw new Error("Project Not Found...");
   }
-
-  await Chat.updateOne({ project: project._id, user: req.user._id }, { $set: { messages: [] } });
 
   res.status(200).json({ message: "Chat Cleared SuccessFully..." });
 };

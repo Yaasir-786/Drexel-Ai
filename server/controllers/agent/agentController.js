@@ -66,20 +66,12 @@ const streamAgent = async (req, res) => {
       res.status(404);
       throw new Error("Project Not Found...");
     }
-
-    chat = await Chat.findOne({ project: project._id, user: userId }).lean();
-
-    if (!chat) {
-      chat = (
-        await Chat.create({ project: project._id, user: userId })
-      ).toObject();
-    }
   }
 
-  const currentFiles = chatOnly ? (chat.files || []) : (project.files || []);
+  const convo = chatOnly ? chat : project;
+  const currentFiles = convo.files || [];
 
-  const history = chat.messages
-    .slice(-HISTORY_LIMIT)
+  const history = (convo.messages || []).slice(-HISTORY_LIMIT)
     .filter((message) => message.content)
     .map((message) => ({
       role: message.role,
@@ -145,7 +137,7 @@ const streamAgent = async (req, res) => {
   };
 
   try {
-    send("meta", { projectId: project?._id, chatId: chat._id, mode, type });
+    send("meta", { projectId: project?._id, chatId: chat?._id || null, mode, type });
 
     let goBuild = mode === "build" || type === "fix";
 
@@ -193,6 +185,9 @@ const streamAgent = async (req, res) => {
           summary: "Fix the error shown in the live preview.",
           complexity: "small",
           mode: "edit",
+          stack: "",
+          designLevel: "polished",
+          designNotes: "",
           preview: chatOnly ? (chat.preview !== false) : true,
           pages: [],
           components: [],
@@ -213,17 +208,19 @@ const streamAgent = async (req, res) => {
           useVision: hasImages && allowImages,
           signal,
         });
-
         plan = planned.plan;
-        if (!chatOnly) plan.preview = true;
+
         addRecord({
           agent: "planner",
           recordMode: "build",
           content: formatPlan(plan),
           tokens: planned.tokens,
         });
+
         send("plan", { plan });
       }
+
+      const baseFiles = plan.mode === "new" ? [] : currentFiles;
 
       send("agent_switch", { from: "planner", to: "coder" });
       send("status", {
@@ -235,7 +232,7 @@ const streamAgent = async (req, res) => {
         plan,
         request: message,
         errorLog,
-        files: currentFiles,
+        files: baseFiles,
         signal,
         send,
       });
@@ -270,7 +267,7 @@ const streamAgent = async (req, res) => {
         } else {
           // merge new / changed files into the project
           const merged = new Map(
-            currentFiles.map((file) => [file.path, file.content]),
+            baseFiles.map((file) => [file.path, file.content]),
           );
           for (const file of coded.files) merged.set(file.path, file.content);
           const chatFiles = [...merged].map(([path, fileContent]) => ({
@@ -300,7 +297,7 @@ const streamAgent = async (req, res) => {
                   $set: {
                     files: chatFiles,
                     preview:
-                      currentFiles.length > 0
+                      baseFiles.length > 0
                         ? chat.preview !== false
                         : plan.preview !== false,
                     ...(rename && { title: plan.projectName }),
@@ -364,21 +361,19 @@ const streamAgent = async (req, res) => {
         })),
       };
 
-      await Chat.updateOne(
-        { _id: chat._id },
-        {
-          $inc: {
-            creditsUsed: credit.round2(totalCredits),
-            tokensUsed: totalTokens,
-          },
-          $push: {
-            messages: {
-              $each: [userMessage, ...records],
-              $slice: -MAX_CHAT_MESSAGES,
-            },
-          },
-        },
-      );
+      const Model = chatOnly ? Chat : Project;
+  await Model.updateOne({ _id: convo._id }, {
+    $inc: {
+      creditsUsed: credit.round2(totalCredits),
+      tokensUsed: totalTokens,
+    },
+    $push: {
+      messages: {
+        $each: [userMessage, ...records],
+        $slice: -MAX_CHAT_MESSAGES,
+      },
+    },
+  });
 
       const updatedUser = await credit.deductCredits(
         userId,
@@ -400,7 +395,7 @@ const streamAgent = async (req, res) => {
     });
     send("done", {
       projectId: project?._id || null,
-      chatId: chat._id,
+      chatId: chat?._id || null,
       mode: effectiveMode,
       aborted,
       failed: errored,
