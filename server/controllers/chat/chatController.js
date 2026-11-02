@@ -1,6 +1,13 @@
 import Chat from "../../models/chatModel.js";
 import Project from "../../models/projectModel.js";
 
+// images go out without the heavy generation source
+const cleanMessages = (messages = []) =>
+  messages.map((message) => ({
+    ...message,
+    images: (message.images || []).map(({ url, publicId }) => ({ url, publicId })),
+  }));
+
 const getChats = async (req, res) => {
   const chats = await Chat.find({
     user: req.user._id,
@@ -40,7 +47,7 @@ const getChatById = async (req, res) => {
   res.status(200).json({
     _id: chat._id,
     title: chat.title || "New chat",
-    messages: chat.messages ? chat.messages.slice(-limit) : [],
+    messages: cleanMessages(chat.messages ? chat.messages.slice(-limit) : []),
     files: chat.files || [],
     preview: chat.preview !== false,
   });
@@ -72,7 +79,7 @@ const getChat = async (req, res) => {
   res.status(200).json({
     _id: project._id,
     title: project.name,
-    messages: (project.messages || []).slice(-limit),
+    messages: cleanMessages((project.messages || []).slice(-limit)),
     files: project.files || [],
     preview: true,
   });

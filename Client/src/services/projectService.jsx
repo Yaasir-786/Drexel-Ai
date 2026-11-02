@@ -58,6 +58,7 @@ export const mapMessages = (messages = []) => {
       mode: m.mode,
       text: m.content,
       attachments: m.attachments,
+      images: m.images || [],
       files: m.files || [],
     }));
 };

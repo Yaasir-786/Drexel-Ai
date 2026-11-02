@@ -40,6 +40,7 @@ export const limits = () => ({
 
 export const pickModel = (agent, useVision = false) => {
   if (agent === "coder") {
+    if (useVision && process.env.VISION_MODEL) return process.env.VISION_MODEL;
     return process.env.CODER_MODEL || "llama-3.3-70b-versatile";
   }
   if (useVision && process.env.VISION_MODEL) return process.env.VISION_MODEL;

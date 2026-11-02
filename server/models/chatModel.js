@@ -8,6 +8,17 @@ const attachmentSchema = new mongoose.Schema(
     publicId: { type: String },
     name: { type: String },
     type: { type: String, enum: ["image", "pdf"] },
+    text: { type: String, maxlength: 15000 },
+  },
+  { _id: false },
+);
+
+const imageSchema = new mongoose.Schema(
+  {
+    url: { type: String, required: true },
+    publicId: { type: String },
+    kind: { type: String, enum: ["art", "layout"] },
+    source: { type: String },
   },
   { _id: false },
 );
@@ -33,6 +44,7 @@ export const messageSchema = new mongoose.Schema(
       default: "",
     },
     attachments: [attachmentSchema],
+    images: [imageSchema],
     files: [String],
     tokensUsed: {
       type: Number,

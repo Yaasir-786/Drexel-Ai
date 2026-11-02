@@ -16,6 +16,22 @@ import { getProfile } from '../features/auth/authSlice';
 import { downloadZip } from '../utils/downloadFiles';
 import { createTypewriter } from '../utils/typewriter';
 
+// replaces the shimmer placeholder with the finished image message
+const pushImageMessage = (setMessages, image) => {
+  setMessages((prev) => {
+    const next = [...prev];
+    const index = next.findIndex((m) => m.type === 'image-loading');
+    const imageMessage = {
+      type: 'assistant',
+      text: 'Here is your image.',
+      images: [{ url: image.url, publicId: image.publicId }],
+    };
+    if (index >= 0) next.splice(index, 1, imageMessage);
+    else next.push(imageMessage);
+    return next;
+  });
+};
+
 export default function Builder() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -95,7 +111,7 @@ export default function Builder() {
   };
 
   const handleSendMessage = async (text, mode, attachments = [], type = "prompt", errorLog = "") => {
-    if ((!text?.trim() && type !== "fix") || isGenerating) return;
+    if ((!text?.trim() && type !== "fix" && attachments.length === 0) || isGenerating) return;
 
     let projectId = currentProjectId;
     let isCreated = false;
@@ -114,7 +130,11 @@ export default function Builder() {
         type: 'user',
         text: type === "fix" ? "Fix preview error" : text,
         mode,
-        attachments: [],
+        attachments: attachments.map((file) => ({
+          url: file.url,
+          name: file.name,
+          type: file.type,
+        })),
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -158,6 +178,16 @@ export default function Builder() {
             setStatusMessage(
               /review/i.test(data.message) ? "Reviewing changes…" : /coder|code/i.test(data.message) ? "Generating code…" : "Thinking…"
             );
+            // image generation: show a shimmer placeholder in the chat
+            if (/image/i.test(data.message)) {
+              setMessages((prev) =>
+                prev.some((m) => m.type === 'image-loading')
+                  ? prev
+                  : [...prev, { type: 'image-loading' }],
+              );
+            }
+          } else if (event === "image") {
+            pushImageMessage(setMessages, data);
           } else if (event === "file_start") {
             setIsWritingFiles(true);
           } else if (event === "token") {
@@ -168,6 +198,8 @@ export default function Builder() {
             }
           } else if (event === "error") {
             toast.error(data.message);
+            // remove a leftover image placeholder after a failed generation
+            setMessages((prev) => prev.filter((m) => m.type !== 'image-loading'));
           } else if (event === "done") {
             doneData = data;
           }
@@ -175,6 +207,9 @@ export default function Builder() {
       });
 
       await typer.drain();
+
+      // remove a leftover image placeholder (aborted generation)
+      setMessages((prev) => prev.filter((m) => m.type !== 'image-loading'));
 
       setIsGenerating(false);
       setIsWritingFiles(false);
@@ -215,6 +250,23 @@ export default function Builder() {
 
   const handleClearChat = () => {
     setMessages([]);
+  };
+
+  // image edit flow: optimistic bubbles around the image-edit API call
+  const handleImageEditStart = (instruction) => {
+    setMessages((prev) => [
+      ...prev,
+      { type: 'user', text: `Edit: ${instruction}` },
+      { type: 'image-loading' },
+    ]);
+  };
+
+  const handleImageEditSuccess = (data) => {
+    if (data.image) pushImageMessage(setMessages, data.image);
+  };
+
+  const handleImageEditError = () => {
+    setMessages((prev) => prev.filter((m) => m.type !== 'image-loading'));
   };
 
   const handleFixError = (errorMessage) => {
@@ -259,6 +311,10 @@ export default function Builder() {
                 activeMode="Build"
                 statusMessage={statusMessage}
                 isWritingFiles={isWritingFiles}
+                projectId={currentProjectId}
+                onImageEditStart={handleImageEditStart}
+                onImageEditSuccess={handleImageEditSuccess}
+                onImageEditError={handleImageEditError}
               />
             </div>
           </div>
@@ -276,6 +332,10 @@ export default function Builder() {
                 activeMode="Build"
                 statusMessage={statusMessage}
                 isWritingFiles={isWritingFiles}
+                projectId={currentProjectId}
+                onImageEditStart={handleImageEditStart}
+                onImageEditSuccess={handleImageEditSuccess}
+                onImageEditError={handleImageEditError}
               />
             </div>
 

@@ -6,20 +6,56 @@ import {
 } from "./prompts.js";
 import { isSafePath } from "./fileParser.js";
 
-// Decides if the user wants something built/changed (BUILD) or just wants to talk (CHAT).
+// cheap keyword check: image words + a make verb and no code words -> IMAGE
+const IMAGE_WORDS = /\b(image|pic|picture|photo|poster|logo|illustration|infographic|chart image|tasveer)\b/i;
+const IMAGE_VERBS = /\b(generate|create|make|bana|banao|bana de|draw|de)\b/i;
+const CODE_WORDS = /\b(website|web page|webpage|app|ui|html|code|component|script)\b/i;
+
+// retry follow-ups like "try again" refer to the previous user message
+export const RETRY_PATTERN = /^\s*(?:try again|retry|again|dobara|phir se|once more)\s*[.!]?$/i;
+
+// text of the last user message in the history (plain text only)
+export const lastUserText = (history = []) => {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const message = history[i];
+    if (message.role !== "user") continue;
+    return typeof message.content === "string"
+      ? message.content
+      : message.content.find((part) => part.type === "text")?.text || "";
+  }
+  return "";
+};
+
+// the request text for image work: retries use the previous user message
+export const imageRequestText = (message, history) =>
+  RETRY_PATTERN.test(message || "") ? lastUserText(history) || message : message;
+
+// Decides if the user wants something built/changed (BUILD), a picture (IMAGE) or just to talk (CHAT).
 // A tiny separate call: simple one word answer, no tools, no special tags.
 // If it fails for any reason we fall back to CHAT (the user can still use the Build toggle).
 export const classifyIntent = async ({ history, content, signal }) => {
-  const text =
+  const raw =
     typeof content === "string"
       ? content
       : content.find((part) => part.type === "text")?.text || "";
+
+  // retry follow-ups are classified using the previous user message
+  const text = imageRequestText(raw, history);
+
+  // cheap keyword check before the LLM call: image words + a make verb, no code words
+  if (IMAGE_WORDS.test(text) && IMAGE_VERBS.test(text) && !CODE_WORDS.test(text)) {
+    return { intent: "IMAGE", tokens: 0 };
+  }
 
   const messages = [
     { role: "system", content: INTENT_PROMPT },
     ...history.slice(-2).map((message) => ({
       role: message.role,
-      content: message.content.slice(0, 300),
+      // rebuilt attachment history can be a content array -> keep it plain text
+      content:
+        typeof message.content === "string"
+          ? message.content.slice(0, 300)
+          : message.content.find((part) => part.type === "text")?.text?.slice(0, 300) || "",
     })),
     { role: "user", content: text.slice(0, 1500) },
   ];
@@ -33,11 +69,16 @@ export const classifyIntent = async ({ history, content, signal }) => {
       signal,
     });
 
-    return { build: /\bBUILD\b/i.test(result.text), tokens: result.tokens };
+    const answer = (result.text || "").trim().toUpperCase();
+    let intent = "CHAT";
+    if (/\bBUILD\b/.test(answer)) intent = "BUILD";
+    else if (/\bIMAGE\b/.test(answer)) intent = "IMAGE";
+
+    return { intent, tokens: result.tokens };
   } catch (error) {
     if (signal?.aborted) throw error;
     console.log(`INTENT CHECK FAILED, using chat... ${error.message}`);
-    return { build: false, tokens: 0 };
+    return { intent: "CHAT", tokens: 0 };
   }
 };
 
@@ -122,7 +163,7 @@ export const normalizePlan = (raw, { hasFiles, fallback }) => {
         : "polished",
     designNotes:
       typeof plan.designNotes === "string"
-        ? plan.designNotes.trim().slice(0, 400)
+        ? plan.designNotes.trim().slice(0, 1500)
         : "",
     pages: asList(plan.pages, 15, 80),
     components: asList(plan.components, 25, 80),

@@ -17,4 +17,12 @@ router.post(
   agentController.streamAgent,
 );
 
+router.post(
+  "/image-edit",
+  protect.forUser,
+  limiter.agentLimiter,
+  validate(schemas.imageEdit),
+  agentController.imageEdit,
+);
+
 export default router;

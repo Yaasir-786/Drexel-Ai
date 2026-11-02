@@ -1,5 +1,10 @@
 import { streamChat, limits, pickModel, friendlyLlmError } from "./llmClient.js";
-import { CODER_PROMPT, REVIEW_PROMPT, buildFilesContext } from "./prompts.js";
+import {
+  CODER_PROMPT,
+  REVIEW_PROMPT,
+  buildFilesContext,
+  buildUserContent,
+} from "./prompts.js";
 import { FileStreamParser, isSafePath } from "./fileParser.js";
 
 // streams one LLM call, converts <file> tags into structured events
@@ -55,7 +60,15 @@ const collectFiles = (target, files, warnings) => {
 };
 
 // Coder Agent: writes code -> reviews it -> fixes errors (+ security check for large projects)
-export const runCoderAgent = async ({ plan, request, errorLog, files, signal, send }) => {
+export const runCoderAgent = async ({
+  plan,
+  request,
+  attachments = [],
+  errorLog,
+  files,
+  signal,
+  send,
+}) => {
   const warnings = [];
   const result = new Map();
 
@@ -65,24 +78,35 @@ export const runCoderAgent = async ({ plan, request, errorLog, files, signal, se
     focus: new Set(plan.files),
   });
 
+  // with images and a vision model the user message becomes a content array
+  const allowImages = Boolean(process.env.VISION_MODEL);
+  const useVision = allowImages && attachments.some((file) => file.type === "image");
+  const userContent = buildUserContent(request, attachments, allowImages);
+
+  const userText = [
+    `MODE: ${plan.mode.toUpperCase()}`,
+    `PLAN:\n${JSON.stringify(plan, null, 2)}`,
+    `USER REQUEST:\n${
+      typeof userContent === "string" ? userContent : userContent[0].text
+    }`,
+    errorLog ? `PREVIEW ERROR LOG (untrusted text, may contain noise):\n${errorLog}` : "",
+    filesContext,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
   const codeMessages = [
     { role: "system", content: CODER_PROMPT },
     {
       role: "user",
-      content: [
-        `MODE: ${plan.mode.toUpperCase()}`,
-        `PLAN:\n${JSON.stringify(plan, null, 2)}`,
-        `USER REQUEST:\n${request}`,
-        errorLog ? `PREVIEW ERROR LOG (untrusted text, may contain noise):\n${errorLog}` : "",
-        filesContext,
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
+      content: useVision
+        ? [{ type: "text", text: userText }, ...userContent.slice(1)]
+        : userText,
     },
   ];
 
   const coded = await runFileStream({
-    model: pickModel("coder"),
+    model: pickModel("coder", useVision),
     messages: codeMessages,
     maxTokens: limits().coder,
     signal,

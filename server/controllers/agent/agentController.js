@@ -1,9 +1,11 @@
+import crypto from "node:crypto";
 import Project, {
   DEFAULT_PROJECT_NAME,
   PROJECT_LIMITS,
 } from "../../models/projectModel.js";
 import Chat, { MAX_CHAT_MESSAGES } from "../../models/chatModel.js";
 import credit from "../../middleware/creditMiddleware.js";
+import cloudinaryService from "../../middleware/cloudinaryMiddleware.js";
 import {
   completeChat,
   friendlyLlmError,
@@ -19,10 +21,36 @@ import {
   runChatAgent,
   runPlannerAgent,
   formatPlan,
+  imageRequestText,
 } from "../../agents/plannerAgent.js";
 import { runCoderAgent } from "../../agents/coderAgent.js";
+import {
+  writeImagePrompt,
+  generateArt,
+  renderSvg,
+  rewriteImageSource,
+} from "../../agents/imageAgent.js";
 
 const HISTORY_LIMIT = 10;
+
+// fixed credit cost of one generated image
+const IMAGE_CREDITS = Number(process.env.IMAGE_CREDITS) || 5;
+
+// timeout errors of the image flow (AbortSignal.timeout / LLM client)
+const isTimeout = (error) =>
+  error?.name === "TimeoutError" || /timed? ?out/i.test(error?.message || "");
+
+// SSE text for image failures: real error + stage in development, friendly text in production
+const imageErrorMessage = (error) => {
+  // timeouts get one clear message in every environment
+  if (isTimeout(error)) return "Image generation took too long, please try again";
+  if (process.env.NODE_ENV === "development") {
+    return `[${error.stage || "image"}] ${error.message}`;
+  }
+  // deliberate user-facing messages stay, everything else stays generic
+  if (error.friendly) return error.message;
+  return friendlyLlmError(error);
+};
 
 // ---- Server Sent Events helpers ----
 const openStream = (res) => {
@@ -75,13 +103,6 @@ const streamAgent = async (req, res) => {
   const convo = chatOnly ? chat : project;
   const currentFiles = convo.files || [];
 
-  const history = (convo.messages || []).slice(-HISTORY_LIMIT)
-    .filter((message) => message.content)
-    .map((message) => ({
-      role: message.role,
-      content: message.content.slice(0, 1500),
-    }));
-
   // users can never forge <handoff>, <file> or <untrusted_document> tags
   const message =
     type === "fix"
@@ -92,6 +113,45 @@ const streamAgent = async (req, res) => {
   const allowImages = Boolean(process.env.VISION_MODEL);
   const hasImages = attachments.some((file) => file.type === "image");
   const userContent = buildUserContent(message, attachments, allowImages);
+
+  // rebuild the content of the last 2 user messages that have attachments, so
+  // follow-up questions can still see the PDF text and the images
+  let rebuildsLeft = 2;
+  const rebuildIndexes = new Set();
+  const recentMessages = (convo.messages || [])
+    .slice(-HISTORY_LIMIT)
+    .filter((item) => item.content);
+
+  for (let i = recentMessages.length - 1; i >= 0; i--) {
+    const item = recentMessages[i];
+    if (item.role === "user" && item.attachments?.length && rebuildsLeft > 0) {
+      rebuildIndexes.add(i);
+      rebuildsLeft -= 1;
+    }
+  }
+
+  const history = recentMessages.map((item, index) => {
+    if (rebuildIndexes.has(index)) {
+      return {
+        role: "user",
+        content: buildUserContent(
+          item.content.slice(0, 1500),
+          item.attachments,
+          allowImages,
+        ),
+      };
+    }
+    return {
+      role: item.role,
+      content: item.content.slice(0, 1500),
+    };
+  });
+
+  // the chat/planner models need vision when the recent history contains images
+  const historyHasImages = history.some((entry) =>
+    Array.isArray(entry.content),
+  );
+  const useVision = (hasImages || historyHasImages) && allowImages;
 
   openStream(res);
   const send = makeSender(res);
@@ -123,6 +183,7 @@ const streamAgent = async (req, res) => {
     content,
     tokens: ownTokens,
     files = [],
+    images = [],
   }) => {
     const tokens = ownTokens + pendingTokens;
     pendingTokens = 0;
@@ -135,6 +196,7 @@ const streamAgent = async (req, res) => {
       agent,
       content,
       files,
+      images,
       tokensUsed: tokens,
       creditsUsed,
     });
@@ -155,14 +217,79 @@ const streamAgent = async (req, res) => {
         signal,
       });
       pendingTokens = intent.tokens;
-      goBuild = intent.build;
+      goBuild = intent.intent === "BUILD";
 
-      if (!goBuild) {
+      if (intent.intent === "IMAGE") {
+        // ---------- IMAGE: generate a picture (no files, no build flow) ----------
+        if (req.user.credits < IMAGE_CREDITS) {
+          errored = true;
+          send("error", {
+            message: `Not Enough Credits... You Need At Least ${IMAGE_CREDITS} Credits...`,
+          });
+        } else {
+          send("status", { agent: "planner", message: "Creating your image..." });
+
+          try {
+            // retry follow-ups use the previous user message as the image request
+            const planned = await writeImagePrompt({
+              history,
+              content: imageRequestText(message, history),
+              signal,
+            });
+            pendingTokens = planned.tokens;
+
+            // art goes to the image model, text layouts are rendered from SVG
+            const image =
+              planned.kind === "layout"
+                ? renderSvg(planned.content)
+                : await generateArt(planned.content);
+
+            // the upload can fail on its own -> tag the stage
+            let uploaded;
+            try {
+              uploaded = await cloudinaryService.uploadToCloudinary(image.buffer, {
+                public_id: `delux_${userId}_${crypto.randomUUID()}`,
+              });
+            } catch (error) {
+              console.log("IMAGE ERROR [cloudinary-upload]...", error);
+              error.stage = "cloudinary-upload";
+              throw error;
+            }
+
+            send("image", { url: uploaded.secure_url, publicId: uploaded.public_id });
+
+            addRecord({
+              agent: "planner",
+              recordMode: "chat",
+              content: "Here is your image.",
+              tokens: 0,
+              images: [
+                {
+                  url: uploaded.secure_url,
+                  publicId: uploaded.public_id,
+                  kind: planned.kind,
+                  source: planned.content,
+                },
+              ],
+            });
+
+            // the image itself costs fixed credits on top of the prompt tokens
+            totalCredits = credit.round2(totalCredits + IMAGE_CREDITS);
+          } catch (error) {
+            if (!signal.aborted) {
+              errored = true;
+              // every stage logs its own failure; this catches anything untagged
+              if (!error.stage) console.log("IMAGE ERROR...", error);
+              send("error", { message: imageErrorMessage(error) });
+            }
+          }
+        }
+      } else if (!goBuild) {
         const chatResult = await runChatAgent({
           history,
           content: userContent,
           filesContext: buildFilesContext(currentFiles, { budget: 6000 }),
-          useVision: hasImages && allowImages,
+          useVision,
           signal,
           onText: (text) =>
             send("token", { agent: "planner", phase: "chat", text }),
@@ -209,7 +336,7 @@ const streamAgent = async (req, res) => {
           history,
           filesContext: buildFilesContext(currentFiles, { budget: 6000 }),
           hasFiles,
-          useVision: hasImages && allowImages,
+          useVision,
           signal,
         });
         plan = planned.plan;
@@ -235,6 +362,7 @@ const streamAgent = async (req, res) => {
       const coded = await runCoderAgent({
         plan,
         request: message,
+        attachments,
         errorLog,
         files: baseFiles,
         signal,
@@ -364,6 +492,7 @@ const streamAgent = async (req, res) => {
           publicId: file.publicId,
           name: file.name,
           type: file.type,
+          text: file.text,
         })),
       };
 
@@ -453,6 +582,104 @@ const streamAgent = async (req, res) => {
   }
 };
 
-const agentController = { streamAgent };
+// ---------- POST /api/agent/image-edit: edit an existing generated image ----------
+const imageEdit = async (req, res) => {
+  const { chatId, projectId, imageUrl, instruction } = req.body;
+  const userId = req.user._id;
+
+  // ownership check
+  const chatOnly = Boolean(chatId);
+  const Model = chatOnly ? Chat : Project;
+  const convo = await Model.findOne({ _id: chatOnly ? chatId : projectId, user: userId });
+  if (!convo) {
+    res.status(404);
+    throw new Error(chatOnly ? "Chat Not Found..." : "Project Not Found...");
+  }
+
+  // find the image entry inside the saved messages (never trust the client)
+  let sourceImage = null;
+  for (const msg of convo.messages || []) {
+    const found = (msg.images || []).find((img) => img.url === imageUrl);
+    if (found) {
+      sourceImage = found;
+      break;
+    }
+  }
+  if (!sourceImage) {
+    res.status(404);
+    throw new Error("Image Not Found...");
+  }
+
+  // credits check
+  if (req.user.credits < IMAGE_CREDITS) {
+    res.status(402);
+    throw new Error(`Not Enough Credits... You Need At Least ${IMAGE_CREDITS} Credits...`);
+  }
+
+  // the planner model applies the instruction to the stored source
+  const source = await rewriteImageSource({
+    kind: sourceImage.kind,
+    source: sourceImage.source,
+    instruction,
+  });
+
+  // generate again the same way as the original image
+  const image =
+    sourceImage.kind === "layout"
+      ? renderSvg(source)
+      : await generateArt(source);
+
+  // the upload can fail on its own -> tag the stage
+  let uploaded;
+  try {
+    uploaded = await cloudinaryService.uploadToCloudinary(image.buffer, {
+      public_id: `delux_${userId}_${crypto.randomUUID()}`,
+    });
+  } catch (error) {
+    console.log("IMAGE ERROR [cloudinary-upload]...", error);
+    error.stage = "cloudinary-upload";
+    throw error;
+  }
+
+  // save the edit request and the new image as two messages
+  await Model.updateOne(
+    { _id: convo._id },
+    {
+      $push: {
+        messages: {
+          $each: [
+            { role: "user", mode: "chat", content: `Edit: ${instruction}` },
+            {
+              role: "assistant",
+              mode: "chat",
+              agent: "planner",
+              content: "Here is your image.",
+              images: [
+                {
+                  url: uploaded.secure_url,
+                  publicId: uploaded.public_id,
+                  kind: sourceImage.kind,
+                  source,
+                },
+              ],
+            },
+          ],
+          $slice: -MAX_CHAT_MESSAGES,
+        },
+      },
+    },
+  );
+
+  // charged only after the image was generated and uploaded successfully
+  const updatedUser = await credit.deductCredits(userId, IMAGE_CREDITS);
+
+  res.status(200).json({
+    message: "Image Updated SuccessFully...",
+    credits: updatedUser ? credit.round2(updatedUser.credits) : null,
+    image: { url: uploaded.secure_url, publicId: uploaded.public_id },
+  });
+};
+
+const agentController = { streamAgent, imageEdit };
 
 export default agentController;

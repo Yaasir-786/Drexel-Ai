@@ -28,9 +28,33 @@ ${SAFETY_RULES}`;
 export const INTENT_PROMPT = `ROLE: PLANNER_INTENT
 You classify the last user message of a chat with an AI app builder.
 Answer BUILD if the user wants a website, app, page or component created, or wants the existing project changed (new feature, bug fix, design, color or text change, adding or removing something), or wants one or more files created or generated (script, document, config, data, text, README, etc.).
+Answer IMAGE if the user wants a picture generated (poster, chart, illustration, logo, infographic, or an image made from attached content like the medicines of a prescription).
+IMAGE examples: "ek pic generate kar", "image bana de", "in medicines ko ek image me likh ke de", "make a poster", "logo banao".
+A request for a PICTURE/IMAGE of something, even with text written inside it, is IMAGE, never BUILD. BUILD is only for code, websites, apps and files.
 Answer CHAT for everything else: questions, explanations, brainstorming, opinions, or code examples and snippets to learn from (only when no file is requested).
+Website and app UI requests always stay BUILD, never IMAGE.
 Decide only from the user's latest message, not from what was built earlier in the chat. A new, different project or technology is BUILD. Questions about the existing project (how to run it, what a file does, why something works) are CHAT. A follow-up change to the existing project (for example: make the header blue, add a contact page, fix the bug) is BUILD.
-Reply with exactly one word: BUILD or CHAT. No other text.`;
+Reply with exactly one word: BUILD, CHAT or IMAGE. No other text.`;
+
+export const IMAGE_PROMPT_PROMPT = `ROLE: IMAGE_PROMPT_WRITER
+You prepare one image for the user. First decide the kind:
+- "layout" when the image is mostly text: lists, tables, charts, schedules, prescription or medicine summaries, text-heavy posters.
+- "art" for everything else (posters, illustrations, logos, scenes, backgrounds).
+
+Reply in EXACTLY this format, no markdown fences:
+KIND: art
+<one detailed English prompt for an image model: subject, style, composition, colors, lighting, background. Any text that must appear inside the picture is wrapped in double quotes and copied exactly.>
+
+or
+
+KIND: layout
+<ONE complete SVG image: viewBox="0 0 1080 1350", clean modern design, readable font sizes, only sans-serif system fonts (for example font-family="Arial, Helvetica, sans-serif"), all text copied EXACTLY from the user's data (names, dosages, numbers, labels). No external images, no external fonts, no scripts.>`;
+
+export const IMAGE_EDIT_PROMPT = `ROLE: IMAGE_EDITOR
+You apply the user's instruction to an existing image definition.
+- If the definition is an image prompt: rewrite the prompt with the instruction applied and keep everything else the same.
+- If the definition is an SVG: return the complete updated SVG with the instruction applied. Keep viewBox 1080x1350, sans-serif system fonts and copy every other text exactly.
+Reply with the new definition only (the prompt or the complete SVG): no explanations, no markdown fences.`;
 
 export const PLANNER_PLAN_PROMPT = `ROLE: PLANNER_PLAN
 You are the Planner Agent of Drexel-Ai. You understand the user's request and produce a step by step plan for the Coder Agent. You NEVER write code.
@@ -53,6 +77,8 @@ Return ONLY one valid JSON object (no markdown fences, no extra text) with exact
 
 MODE (only when the project already has files): use "edit" when the request changes, fixes or extends the existing project. Use "new" when the request is a different project, or asks for a different technology or stack than the existing files, or the user says new, another, instead or from scratch. With "new" the existing files are discarded. When the project has no files the mode is always "new".
 Decide the stack, preview and design level only from the user's latest request, not from earlier builds in this conversation (except in edit mode, where the existing stack is kept).
+
+ATTACHED IMAGE: when the user attached an image (screenshot, mockup or design), "designNotes" must describe what the image shows in detail: overall layout, every visible section, colors (as hex codes), fonts, spacing and all visible text, so the Coder can rebuild the design faithfully.
 
 CHOOSING THE TECHNOLOGY (decide this first)
 1) If the user names technologies, languages, frameworks or libraries, use EXACTLY those, even if the project becomes big. Plan a complete, production-quality project for that stack (clear folder structure, dependency file, README with run steps, .env.example when env vars are needed, validation and error handling).
@@ -161,9 +187,14 @@ export const buildUserContent = (
   let text = message || "";
 
   attachments
-    .filter((file) => file.type === "pdf" && file.text)
+    .filter((file) => file.type === "pdf")
     .forEach((file) => {
-      text += `\n\n<untrusted_document name="${safeName(file.name)}">\n${stripReservedTags(file.text)}\n</untrusted_document>`;
+      // scanned or broken PDFs have no text -> tell the model about it
+      if (file.text) {
+        text += `\n\n<untrusted_document name="${safeName(file.name)}">\n${stripReservedTags(file.text)}\n</untrusted_document>`;
+      } else {
+        text += `\n\n[PDF has no readable text (maybe scanned)]`;
+      }
     });
 
   const images = attachments.filter((file) => file.type === "image");

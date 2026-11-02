@@ -1,10 +1,13 @@
 // ChatPanel component: clean Claude-style conversational interface with status progression and hidden internal agent details
 import React, { useState, useRef, useEffect } from 'react';
+import { useSelector } from 'react-redux';
+import toast from 'react-hot-toast';
 import {
   Send,
   Paperclip,
   X,
   Square,
+  FileText,
 } from 'lucide-react';
 import Button from '../Button';
 import Badge from '../Badge';
@@ -12,6 +15,8 @@ import ChatMessageContent from '../ChatMessageContent';
 import RunStatus from '../RunStatus';
 import PromptGlow from '../PromptGlow';
 import Greeting from '../Greeting';
+import ChatImage from '../chat/ChatImage';
+import uploadService from '../../services/uploadService';
 
 export default function ChatPanel({
   messages = [],
@@ -23,10 +28,16 @@ export default function ChatPanel({
   onModeChange,
   statusMessage,
   isWritingFiles = false,
+  projectId = null,
+  onImageEditStart,
+  onImageEditSuccess,
+  onImageEditError,
 }) {
   const [inputText, setInputText] = useState('');
   const [mode, setMode] = useState(activeMode); // 'Chat' or 'Build'
   const [attachments, setAttachments] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const { user } = useSelector((state) => state.auth);
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -43,26 +54,66 @@ export default function ChatPanel({
     if (onModeChange) onModeChange(newMode);
   };
 
+  // validate and keep the real File objects for the upload
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    const remainingSlots = 3 - attachments.length;
-    const newAttachments = files.slice(0, remainingSlots).map((f) => ({
-      name: f.name,
-      size: (f.size / (1024 * 1024)).toFixed(1),
-    }));
-    setAttachments([...attachments, ...newAttachments]);
     e.target.value = '';
+    if (!files.length) return;
+
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+    const next = [...attachments];
+
+    for (const file of files) {
+      if (next.length >= 3) {
+        toast.error('You can attach at most 3 files');
+        break;
+      }
+      if (!allowed.includes(file.type)) {
+        toast.error(`${file.name}: only JPG, PNG and PDF files are allowed`);
+        continue;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`${file.name} is larger than 5 MB`);
+        continue;
+      }
+      next.push({
+        file,
+        name: file.name,
+        size: (file.size / (1024 * 1024)).toFixed(1),
+        // local preview url for images, null for PDFs
+        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      });
+    }
+
+    setAttachments(next);
   };
 
   const handleRemoveAttachment = (index) => {
     setAttachments(attachments.filter((_, i) => i !== index));
   };
 
-  const handleSend = (e) => {
+  // upload the attached files first, then hand the stored objects to the builder
+  const handleSend = async (e) => {
     e.preventDefault();
-    if (!inputText.trim() || isGenerating) return;
-    onSendMessage(inputText.trim(), mode, attachments);
+    if ((!inputText.trim() && attachments.length === 0) || isGenerating || isUploading) return;
+
+    let uploaded = [];
+    if (attachments.length > 0) {
+      try {
+        setIsUploading(true);
+        uploaded = await uploadService.uploadFiles(
+          user?.token,
+          attachments.map((att) => att.file),
+        );
+      } catch (error) {
+        toast.error('File upload failed. Please try again.');
+        return;
+      } finally {
+        setIsUploading(false);
+      }
+    }
+
+    onSendMessage(inputText.trim(), mode, uploaded);
     setInputText('');
     setAttachments([]);
   };
@@ -106,6 +157,16 @@ export default function ChatPanel({
               return null;
             }
 
+            // Shimmer placeholder while an image is being generated
+            if (msg.type === 'image-loading') {
+              return (
+                <div key={index} className="self-start flex gap-3 items-start">
+                  <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
+                  <div className="w-48 h-48 rounded-2xl border border-line bg-surface animate-pulse" />
+                </div>
+              );
+            }
+
             // User message bubble
             if (msg.type === 'user') {
               return (
@@ -117,7 +178,16 @@ export default function ChatPanel({
                   {msg.attachments?.length > 0 && (
                     <div className="mt-2 pt-1.5 border-t border-white/20 flex flex-wrap gap-1">
                       {msg.attachments.map((att, i) => (
-                        <span key={i} className="text-[10px] bg-white/20 px-2 py-0.5 rounded-md">
+                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-white/20 px-2 py-0.5 rounded-md">
+                          {att.type === 'image' ? (
+                            <img
+                              src={att.url}
+                              alt={att.name}
+                              className="w-4 h-4 rounded object-cover shrink-0"
+                            />
+                          ) : (
+                            <Paperclip size={10} />
+                          )}
                           {att.name}
                         </span>
                       ))}
@@ -140,6 +210,21 @@ export default function ChatPanel({
                   <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
                   <div className="flex-1 min-w-0 pt-1 font-serif text-sm text-ink leading-relaxed">
                     <ChatMessageContent content={responseText} />
+                    {/* Generated images under the assistant text */}
+                    {msg.images?.length > 0 && (
+                      <div className="flex flex-col gap-2">
+                        {msg.images.map((img, i) => (
+                          <ChatImage
+                            key={i}
+                            url={img.url}
+                            projectId={projectId}
+                            onEditStart={onImageEditStart}
+                            onEditSuccess={onImageEditSuccess}
+                            onEditError={onImageEditError}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -190,6 +275,15 @@ export default function ChatPanel({
                   key={i}
                   className="inline-flex items-center gap-1.5 bg-surface border border-line rounded-lg px-2 py-1 text-[11px] text-ink"
                 >
+                  {att.preview ? (
+                    <img
+                      src={att.preview}
+                      alt={att.name}
+                      className="w-5 h-5 rounded object-cover shrink-0"
+                    />
+                  ) : (
+                    <FileText size={13} className="text-muted shrink-0" />
+                  )}
                   <span className="truncate max-w-[120px]">{att.name}</span>
                   <button
                     type="button"
@@ -267,11 +361,11 @@ export default function ChatPanel({
             <Button
               variant="primary"
               onClick={handleSend}
-              disabled={!inputText.trim()}
+              disabled={(!inputText.trim() && attachments.length === 0) || isUploading}
               className="h-9! px-4 text-xs"
               icon={Send}
             >
-              Send
+              {isUploading ? 'Uploading...' : 'Send'}
             </Button>
           )}
         </div>

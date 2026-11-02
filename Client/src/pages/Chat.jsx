@@ -13,6 +13,7 @@ import {
   FolderPlus,
   X,
   Eye,
+  FileText,
 } from "lucide-react";
 import Sidebar from "../components/layout/Sidebar";
 import ThemeToggle from "../components/ThemeToggle";
@@ -21,6 +22,7 @@ import Button from "../components/Button";
 import chatService from "../services/chatService";
 import agentService from "../services/agentService";
 import { mapMessages } from "../services/projectService";
+import uploadService from "../services/uploadService";
 import ArtifactCard from "../components/chat/ArtifactCard";
 import ArtifactPanel from "../components/chat/ArtifactPanel";
 import { downloadZip } from "../utils/downloadFiles";
@@ -29,6 +31,23 @@ import { createTypewriter } from "../utils/typewriter";
 import RunStatus from "../components/RunStatus";
 import PromptGlow from "../components/PromptGlow";
 import Greeting from "../components/Greeting";
+import ChatImage from "../components/chat/ChatImage";
+
+// replaces the shimmer placeholder with the finished image message
+const pushImageMessage = (setMessages, image) => {
+  setMessages((prev) => {
+    const next = [...prev];
+    const index = next.findIndex((m) => m.type === "image-loading");
+    const imageMessage = {
+      type: "assistant",
+      text: "Here is your image.",
+      images: [{ url: image.url, publicId: image.publicId }],
+    };
+    if (index >= 0) next.splice(index, 1, imageMessage);
+    else next.push(imageMessage);
+    return next;
+  });
+};
 
 export default function Chat() {
   const { id } = useParams();
@@ -50,6 +69,7 @@ export default function Chat() {
   const [inputPrompt, setInputPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isWritingFiles, setIsWritingFiles] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [processingStatus, setProcessingStatus] = useState("Thinking…");
   const [attachments, setAttachments] = useState([]);
   const fileInputRef = useRef(null);
@@ -89,24 +109,67 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [messages, isGenerating]);
 
+  // validate and keep the real File objects for the upload
   const handleFileSelect = (e) => {
     const selected = Array.from(e.target.files || []);
-    if (!selected.length) return;
-    const remainingSlots = 3 - attachments.length;
-    const newAttachments = selected.slice(0, remainingSlots).map((f) => ({
-      name: f.name,
-      size: (f.size / (1024 * 1024)).toFixed(1),
-    }));
-    setAttachments([...attachments, ...newAttachments]);
     e.target.value = "";
+    if (!selected.length) return;
+
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
+    const next = [...attachments];
+
+    for (const file of selected) {
+      if (next.length >= 3) {
+        toast.error("You can attach at most 3 files");
+        break;
+      }
+      if (!allowed.includes(file.type)) {
+        toast.error(`${file.name}: only JPG, PNG and PDF files are allowed`);
+        continue;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`${file.name} is larger than 5 MB`);
+        continue;
+      }
+      next.push({
+        file,
+        name: file.name,
+        size: (file.size / (1024 * 1024)).toFixed(1),
+        // local preview url for images, null for PDFs
+        preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
+      });
+    }
+
+    setAttachments(next);
   };
 
   const handleRemoveAttachment = (index) => {
     setAttachments(attachments.filter((_, i) => i !== index));
   };
 
-  const runStream = async ({ message, type = "prompt", errorLog = "" }) => {
-    if ((!message?.trim() && type !== "fix") || isGenerating) return;
+  // image edit flow: optimistic bubbles around the image-edit API call
+  const handleImageEditStart = (instruction) => {
+    setMessages((prev) => [
+      ...prev,
+      { type: "user", text: `Edit: ${instruction}` },
+      { type: "image-loading" },
+    ]);
+  };
+
+  const handleImageEditSuccess = (data) => {
+    if (data.image) pushImageMessage(setMessages, data.image);
+  };
+
+  const handleImageEditError = () => {
+    setMessages((prev) => prev.filter((m) => m.type !== "image-loading"));
+  };
+
+  const runStream = async ({ message, type = "prompt", errorLog = "", attachments = [] }) => {
+    if (
+      (!message?.trim() && type !== "fix" && attachments.length === 0) ||
+      isGenerating
+    )
+      return;
 
     let chatId = currentChatId;
     let isNewChat = false;
@@ -126,7 +189,11 @@ export default function Chat() {
       const userMessage = {
         type: "user",
         text: type === "fix" ? "Fix preview error" : message,
-        attachments: [],
+        attachments: attachments.map((file) => ({
+          url: file.url,
+          name: file.name,
+          type: file.type,
+        })),
       };
       setMessages((prev) => [...prev, userMessage]);
 
@@ -161,6 +228,7 @@ export default function Chat() {
           mode: type === "fix" ? "build" : "chat",
           type,
           errorLog,
+          attachments,
         },
         signal: controller.signal,
         onEvent: (event, data) => {
@@ -168,6 +236,16 @@ export default function Chat() {
             setProcessingStatus(
               /review/i.test(data.message) ? "Reviewing changes…" : /coder|code/i.test(data.message) ? "Generating code…" : "Thinking…"
             );
+            // image generation: show a shimmer placeholder in the chat
+            if (/image/i.test(data.message)) {
+              setMessages((prev) =>
+                prev.some((m) => m.type === "image-loading")
+                  ? prev
+                  : [...prev, { type: "image-loading" }],
+              );
+            }
+          } else if (event === "image") {
+            pushImageMessage(setMessages, data);
           } else if (event === "file_start") {
             setIsWritingFiles(true);
           } else if (event === "token") {
@@ -178,6 +256,8 @@ export default function Chat() {
             }
           } else if (event === "error") {
             toast.error(data.message);
+            // remove a leftover image placeholder after a failed generation
+            setMessages((prev) => prev.filter((m) => m.type !== "image-loading"));
           } else if (event === "title") {
             if (data.title) {
               setChatTitle(data.title);
@@ -199,6 +279,9 @@ export default function Chat() {
       });
 
       await typer.drain();
+
+      // remove a leftover image placeholder (aborted generation)
+      setMessages((prev) => prev.filter((m) => m.type !== "image-loading"));
 
       setIsGenerating(false);
       setIsWritingFiles(false);
@@ -241,12 +324,30 @@ export default function Chat() {
     }
   };
 
-  const handleSendPrompt = (textToSend) => {
+  // upload the attached files first, then stream with the stored file objects
+  const handleSendPrompt = async (textToSend) => {
     const text = (textToSend || inputPrompt)?.trim();
-    if (!text) return;
+    if ((!text && attachments.length === 0) || isUploading || isGenerating) return;
+
+    let uploaded = [];
+    if (attachments.length > 0) {
+      try {
+        setIsUploading(true);
+        uploaded = await uploadService.uploadFiles(
+          user?.token,
+          attachments.map((att) => att.file),
+        );
+      } catch (error) {
+        toast.error("File upload failed. Please try again.");
+        return;
+      } finally {
+        setIsUploading(false);
+      }
+    }
+
     setInputPrompt("");
     setAttachments([]);
-    runStream({ message: text });
+    runStream({ message: text, attachments: uploaded });
   };
 
   // Find last build or assistant message to place ArtifactCard under
@@ -371,6 +472,17 @@ export default function Chat() {
                 <div className="flex flex-col gap-6 py-4">
                   {messages.map((msg, index) => {
                     const isUser = msg.type === "user";
+
+                    // shimmer placeholder while an image is being generated
+                    if (msg.type === "image-loading") {
+                      return (
+                        <div key={index} className="self-start flex gap-3.5 items-start">
+                          <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
+                          <div className="w-64 h-64 rounded-2xl border border-line bg-surface animate-pulse" />
+                        </div>
+                      );
+                    }
+
                     return (
                       <div
                         key={index}
@@ -397,7 +509,15 @@ export default function Chat() {
                                   <span
                                     key={i}
                                     className="inline-flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded text-[10px] text-white font-medium">
-                                    <Paperclip size={10} />
+                                    {att.type === "image" ? (
+                                      <img
+                                        src={att.url}
+                                        alt={att.name}
+                                        className="w-4 h-4 rounded object-cover shrink-0"
+                                      />
+                                    ) : (
+                                      <Paperclip size={10} />
+                                    )}
                                     {att.name}
                                   </span>
                                 ))}
@@ -411,6 +531,22 @@ export default function Chat() {
                             )}
                           </div>
                         </div>
+
+                        {/* Generated images under the assistant text */}
+                        {!isUser && msg.images?.length > 0 && (
+                          <div className="pl-12 mt-1 flex flex-col gap-2">
+                            {msg.images.map((img, i) => (
+                              <ChatImage
+                                key={i}
+                                url={img.url}
+                                chatId={currentChatId}
+                                onEditStart={handleImageEditStart}
+                                onEditSuccess={handleImageEditSuccess}
+                                onEditError={handleImageEditError}
+                              />
+                            ))}
+                          </div>
+                        )}
 
                         {/* ArtifactCard under last build message */}
                         {!isUser && index === targetCardIndex && files.length > 0 && preview === false && (
@@ -455,6 +591,15 @@ export default function Chat() {
                     <div
                       key={i}
                       className="inline-flex items-center gap-1.5 bg-surface border border-line rounded-lg px-2.5 py-1 text-[11px] text-ink">
+                      {att.preview ? (
+                        <img
+                          src={att.preview}
+                          alt={att.name}
+                          className="w-5 h-5 rounded object-cover shrink-0"
+                        />
+                      ) : (
+                        <FileText size={13} className="text-muted shrink-0" />
+                      )}
                       <span className="truncate max-w-[140px]">{att.name}</span>
                       <button
                         type="button"
@@ -525,10 +670,12 @@ export default function Chat() {
                   <Button
                     variant="primary"
                     onClick={() => handleSendPrompt()}
-                    disabled={!inputPrompt.trim()}
+                    disabled={
+                      (!inputPrompt.trim() && attachments.length === 0) || isUploading
+                    }
                     className="h-9! px-3.5 text-xs shadow-xs"
                     icon={Send}>
-                    Send
+                    {isUploading ? "Uploading..." : "Send"}
                   </Button>
                 )}
               </div>

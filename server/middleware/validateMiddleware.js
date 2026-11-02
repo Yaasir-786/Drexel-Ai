@@ -166,6 +166,17 @@ const schemas = {
       }),
     ),
   }),
+
+  imageEdit: z
+    .object({
+      chatId: objectId.optional(),
+      projectId: objectId.optional(),
+      imageUrl: text("Image url").url("Invalid image url").max(500),
+      instruction: text("Instruction").trim().min(1, "Instruction is required").max(500),
+    })
+    .refine((data) => Boolean(data.chatId || data.projectId), {
+      message: "chatId or projectId is required",
+    }),
 };
 
 // validates req.body and replaces it with the clean parsed data (unknown fields are dropped)
