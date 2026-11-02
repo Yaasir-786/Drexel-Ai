@@ -42,7 +42,7 @@ export const writeImagePrompt = async ({ history = [], content, signal }) =>
         })),
         { role: "user", content: text.slice(0, 2000) },
       ],
-      maxTokens: Number(process.env.IMAGE_PROMPT_MAX_TOKENS) || 500,
+      maxTokens: Number(process.env.IMAGE_PROMPT_MAX_TOKENS) || 3500,
       temperature: 0.4,
       // ~30s timeout, still cancellable by the user's stop signal
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
@@ -68,7 +68,7 @@ export const generateArt = async (prompt) =>
       );
     }
 
-    const model = process.env.IMAGE_MODEL || "@cf/stable-diffusion-xl-lightning";
+    const model = process.env.IMAGE_MODEL || "@cf/black-forest-labs/flux-1-schnell";
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
       {
@@ -107,7 +107,7 @@ export const generateArt = async (prompt) =>
       throw userError("The image service returned no image. Please try again...");
     }
 
-    return { buffer: Buffer.from(base64, "base64"), mimeType: "image/png" };
+    return { buffer: Buffer.from(base64, "base64"), mimeType: "image/jpeg" };
   });
 
 // Converts a generated layout SVG into a PNG (1080px wide, system fonts)

@@ -11,7 +11,6 @@ import {
 import AppShell from "../components/layout/AppShell";
 import TextField from "../components/TextField";
 import Button from "../components/Button";
-import Toast from "../components/Toast";
 import { useTheme } from "../context/ThemeContext";
 import { useSelector, useDispatch } from "react-redux";
 import { useMutation } from "@tanstack/react-query";
@@ -46,9 +45,7 @@ export default function Settings() {
   // Password form states
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-
-  // Toast state
-  const [showToast, setShowToast] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   // Save profile mutation
   const profileMutation = useMutation({
@@ -99,7 +96,8 @@ export default function Settings() {
       );
       setCurrentPassword("");
       setNewPassword("");
-      setShowToast(true);
+      setConfirmPassword("");
+      toast.success("Password changed");
     },
     onError: (error) => {
       toast.error(error.response?.data?.message || "Something went wrong");
@@ -111,6 +109,14 @@ export default function Settings() {
     e.preventDefault();
     if (!currentPassword || !newPassword) {
       toast.error("Enter both passwords");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      toast.error("New password must be different from the current one");
       return;
     }
     passwordMutation.mutate({ currentPassword, newPassword });
@@ -266,6 +272,15 @@ export default function Settings() {
                 helperText="Min 8 characters, with a letter and a number"
               />
 
+              <TextField
+                id="confirm-password"
+                label="Confirm new password"
+                placeholder="Re-enter new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                showPasswordToggle
+              />
+
               <div className="flex justify-end pt-2">
                 <Button type="submit" variant="primary">
                   Update password
@@ -339,13 +354,6 @@ export default function Settings() {
           </div>
         </div>
       </div>
-
-      {/* Toast Notification */}
-      <Toast
-        message="Saved successfully"
-        isVisible={showToast}
-        onClose={() => setShowToast(false)}
-      />
     </AppShell>
   );
 }

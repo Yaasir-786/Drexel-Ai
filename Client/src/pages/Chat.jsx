@@ -157,7 +157,8 @@ export default function Chat() {
 
     // index zip files immediately, so they are ready when the user sends
     next.forEach((entry) => {
-      if (!entry.isZip) return;
+      // only index the zips added in this call
+      if (!entry.isZip || !entry.zipFile) return;
       uploadService
         .uploadFiles(user?.token, [entry.zipFile])
         .then((files) => {

@@ -27,6 +27,16 @@ const deleteFromCloudinary = async (publicId) => {
   return false;
 };
 
-const cloudinaryService = { uploadToCloudinary, deleteFromCloudinary };
+// deletes every asset whose public id starts with the prefix (both types)
+const deleteAssetsByPrefix = async (prefix) => {
+  for (const resourceType of ["image", "raw"]) {
+    await getCloudinary().uploader.delete_resources_by_prefix(prefix, {
+      resource_type: resourceType,
+    });
+  }
+  return true;
+};
+
+const cloudinaryService = { uploadToCloudinary, deleteFromCloudinary, deleteAssetsByPrefix };
 
 export default cloudinaryService;

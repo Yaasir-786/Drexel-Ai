@@ -2,6 +2,7 @@ import User from "../../models/userModel.js";
 import Project from "../../models/projectModel.js";
 import Chat from "../../models/chatModel.js";
 import credit from "../../middleware/creditMiddleware.js";
+import { cleanupUserAssets } from "../../utils/assetCleanup.js";
 
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -145,6 +146,9 @@ const deleteUser = async (req, res) => {
     Chat.deleteMany({ user: user._id }),
   ]);
   await User.deleteOne({ _id: user._id });
+
+  // cloudinary assets and indexed zips are cleaned up without blocking
+  cleanupUserAssets(user._id);
 
   res.status(200).json({ message: "User Deleted SuccessFully..." });
 };

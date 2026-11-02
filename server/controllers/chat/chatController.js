@@ -1,5 +1,6 @@
 import Chat from "../../models/chatModel.js";
 import Project from "../../models/projectModel.js";
+import { cleanupChatAssets } from "../../utils/assetCleanup.js";
 
 // images go out without the heavy generation source
 const cleanMessages = (messages = []) =>
@@ -63,6 +64,13 @@ const deleteChat = async (req, res) => {
     res.status(404);
     throw new Error("Chat Not Found...");
   }
+
+  // clean up cloudinary assets and indexed zips without blocking the response
+  const documentIds = (chat.messages || [])
+    .flatMap((message) => message.attachments || [])
+    .filter((file) => file.type === "zip" && file.documentId)
+    .map((file) => file.documentId);
+  cleanupChatAssets({ messages: chat.messages || [], documentIds });
 
   res.status(200).json({ message: "Chat Deleted SuccessFully..." });
 };

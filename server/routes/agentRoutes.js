@@ -21,6 +21,7 @@ router.post(
   "/image-edit",
   protect.forUser,
   limiter.agentLimiter,
+  credit.checkCredits,
   validate(schemas.imageEdit),
   agentController.imageEdit,
 );

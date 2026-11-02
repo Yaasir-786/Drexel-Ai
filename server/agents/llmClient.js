@@ -32,7 +32,7 @@ const getClient = () => {
 };
 
 export const limits = () => ({
-  chat: Number(process.env.CHAT_MAX_TOKENS) || 1500,
+  chat: Number(process.env.CHAT_MAX_TOKENS) || 4000,
   planner: Number(process.env.PLANNER_MAX_TOKENS) || 2000,
   coder: Number(process.env.CODER_MAX_TOKENS) || 12000,
   review: Number(process.env.REVIEW_MAX_TOKENS) || 8000,

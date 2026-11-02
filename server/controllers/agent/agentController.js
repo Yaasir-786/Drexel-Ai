@@ -133,11 +133,13 @@ const streamAgent = async (req, res) => {
   }
 
   const history = recentMessages.map((item, index) => {
+    // messages with a code block keep more text, so a function shown earlier can be changed later
+    const limit = item.content.includes("```") ? 6000 : 1500;
     if (rebuildIndexes.has(index)) {
       return {
         role: "user",
         content: buildUserContent(
-          item.content.slice(0, 1500),
+          item.content.slice(0, limit),
           item.attachments,
           allowImages,
         ),
@@ -145,7 +147,7 @@ const streamAgent = async (req, res) => {
     }
     return {
       role: item.role,
-      content: item.content.slice(0, 1500),
+      content: item.content.slice(0, limit),
     };
   });
 
@@ -156,12 +158,16 @@ const streamAgent = async (req, res) => {
   const useVision = (hasImages || historyHasImages) && allowImages;
 
   // zip attachments: document ids from the message and the last 2 user messages
-  const documentIds = [
-    ...new Set([
-      ...attachments
+  const currentDocIds = [
+    ...new Set(
+      attachments
         .filter((file) => file.type === "zip")
         .map((file) => file.documentId),
-      ...recentMessages
+    ),
+  ].filter(Boolean);
+  const historyDocIds = [
+    ...new Set(
+      recentMessages
         .filter(
           (item) =>
             item.role === "user" &&
@@ -173,25 +179,40 @@ const streamAgent = async (req, res) => {
             .filter((file) => file.type === "zip")
             .map((file) => file.documentId),
         ),
-    ]),
+    ),
   ].filter(Boolean);
 
-  // every document must belong to the user
-  if (documentIds.length > 0) {
+  // document ids sent in this request must belong to the user
+  if (currentDocIds.length > 0) {
     const owned = await Document.countDocuments({
-      _id: { $in: documentIds },
+      _id: { $in: currentDocIds },
       userId: req.user._id,
     });
-    if (owned !== documentIds.length) {
+    if (owned !== currentDocIds.length) {
       res.status(403);
       throw new Error("Invalid Document...");
     }
   }
 
+  // expired documents from history are silently dropped
+  const existingHistory = historyDocIds.length
+    ? await Document.find({ _id: { $in: historyDocIds }, userId: req.user._id })
+        .select("_id")
+        .lean()
+    : [];
+  const documentIds = [
+    ...new Set([
+      ...currentDocIds,
+      ...existingHistory.map((doc) => String(doc._id)),
+    ]),
+  ];
+
   // zip context for the AI: tree + entry files + search hits (empty without zips)
   const docContext = await buildDocContext({
     documentIds,
     query: `${message}\n${lastUserText(recentMessages)}`,
+    message,
+    userId: req.user._id,
   });
 
   const userContent = buildUserContent(message, attachments, allowImages, docContext);
@@ -256,7 +277,9 @@ const streamAgent = async (req, res) => {
 
       const intent = await classifyIntent({
         history,
-        content: userContent,
+        // the plain message only: userContent already contains the zip/PDF text
+        content: message,
+        hasFiles: currentFiles.length > 0,
         signal,
       });
       pendingTokens = intent.tokens;
@@ -279,7 +302,7 @@ const streamAgent = async (req, res) => {
               content: imageRequestText(message, history),
               signal,
             });
-            pendingTokens = planned.tokens;
+            pendingTokens += planned.tokens;
 
             // art goes to the image model, text layouts are rendered from SVG
             const image =

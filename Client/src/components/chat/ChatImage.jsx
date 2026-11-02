@@ -30,8 +30,10 @@ export default function ChatImage({
       queryClient.invalidateQueries({ queryKey: ["usage"] });
       onEditSuccess?.(data);
     },
-    onError: () => {
-      toast.error("Image edit failed. Please try again.");
+    onError: (error) => {
+      toast.error(
+        error?.response?.data?.message || "Image edit failed. Please try again.",
+      );
       onEditError?.();
     },
   });
@@ -43,7 +45,7 @@ export default function ChatImage({
       const blob = await response.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = "drexel-image.png";
+      link.download = "drexel-image.jpg";
       document.body.appendChild(link);
       link.click();
       link.remove();
