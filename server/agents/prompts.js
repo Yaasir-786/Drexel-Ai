@@ -183,6 +183,7 @@ export const buildUserContent = (
   message,
   attachments = [],
   allowImages = false,
+  docContext = "",
 ) => {
   let text = message || "";
 
@@ -196,6 +197,9 @@ export const buildUserContent = (
         text += `\n\n[PDF has no readable text (maybe scanned)]`;
       }
     });
+
+  // zip project context (already wrapped in untrusted_document tags)
+  if (docContext) text += `\n\n${docContext}`;
 
   const images = attachments.filter((file) => file.type === "image");
   if (!images.length) return text;

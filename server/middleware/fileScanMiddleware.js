@@ -1,4 +1,5 @@
 import { fileTypeFromBuffer } from "file-type";
+import { MAX_FILE_SIZE, MAX_ZIP_SIZE } from "./fileUploadMiddleware.js";
 
 // real file type (magic bytes) -> allowed extension
 const ALLOWED_TYPES = {
@@ -6,6 +7,14 @@ const ALLOWED_TYPES = {
   png: { mime: "image/png", kind: "image" },
   pdf: { mime: "application/pdf", kind: "pdf" },
 };
+
+// zip magic bytes: 50 4B 03 04
+const isZipBuffer = (buffer) =>
+  buffer.length > 4 &&
+  buffer[0] === 0x50 &&
+  buffer[1] === 0x4b &&
+  buffer[2] === 0x03 &&
+  buffer[3] === 0x04;
 
 // active content inside a PDF (scripts, auto launch, embedded files)
 const DANGEROUS_PDF = /\/(JavaScript|JS|Launch|EmbeddedFile)\b/;
@@ -26,6 +35,24 @@ const scanFiles = async (req, res, next) => {
   }
 
   for (const file of req.files) {
+    const declared = file.originalname.split(".").pop().toLowerCase().replace("jpeg", "jpg");
+
+    // zip: accepted by extension, verified by magic bytes (never uploaded anywhere)
+    if (declared === "zip") {
+      if (!isZipBuffer(file.buffer)) {
+        res.status(400);
+        throw new Error(`File "${cleanName(file.originalname)}" Content Does Not Match Its Extension...`);
+      }
+      if (file.size > MAX_ZIP_SIZE) {
+        res.status(400);
+        throw new Error(`ZIP "${cleanName(file.originalname)}" Is Larger Than 20 MB...`);
+      }
+      file.kind = "zip";
+      file.detectedMime = "application/zip";
+      file.safeName = cleanName(file.originalname);
+      continue;
+    }
+
     const detected = await fileTypeFromBuffer(file.buffer);
     const allowed = detected ? ALLOWED_TYPES[detected.ext] : null;
 
@@ -34,10 +61,14 @@ const scanFiles = async (req, res, next) => {
       throw new Error(`File "${cleanName(file.originalname)}" Is Not A Valid JPG, PNG Or PDF...`);
     }
 
-    const declared = file.originalname.split(".").pop().toLowerCase().replace("jpeg", "jpg");
     if (declared !== detected.ext) {
       res.status(400);
       throw new Error(`File "${cleanName(file.originalname)}" Content Does Not Match Its Extension...`);
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      res.status(400);
+      throw new Error(`File "${cleanName(file.originalname)}" Is Larger Than 5 MB...`);
     }
 
     if (allowed.kind === "pdf" && DANGEROUS_PDF.test(file.buffer.toString("latin1"))) {

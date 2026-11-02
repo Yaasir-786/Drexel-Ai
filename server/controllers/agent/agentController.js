@@ -4,6 +4,7 @@ import Project, {
   PROJECT_LIMITS,
 } from "../../models/projectModel.js";
 import Chat, { MAX_CHAT_MESSAGES } from "../../models/chatModel.js";
+import Document from "../../models/documentModel.js";
 import credit from "../../middleware/creditMiddleware.js";
 import cloudinaryService from "../../middleware/cloudinaryMiddleware.js";
 import {
@@ -22,8 +23,10 @@ import {
   runPlannerAgent,
   formatPlan,
   imageRequestText,
+  lastUserText,
 } from "../../agents/plannerAgent.js";
 import { runCoderAgent } from "../../agents/coderAgent.js";
+import { buildDocContext } from "../../agents/docContext.js";
 import {
   writeImagePrompt,
   generateArt,
@@ -112,7 +115,6 @@ const streamAgent = async (req, res) => {
 
   const allowImages = Boolean(process.env.VISION_MODEL);
   const hasImages = attachments.some((file) => file.type === "image");
-  const userContent = buildUserContent(message, attachments, allowImages);
 
   // rebuild the content of the last 2 user messages that have attachments, so
   // follow-up questions can still see the PDF text and the images
@@ -152,6 +154,47 @@ const streamAgent = async (req, res) => {
     Array.isArray(entry.content),
   );
   const useVision = (hasImages || historyHasImages) && allowImages;
+
+  // zip attachments: document ids from the message and the last 2 user messages
+  const documentIds = [
+    ...new Set([
+      ...attachments
+        .filter((file) => file.type === "zip")
+        .map((file) => file.documentId),
+      ...recentMessages
+        .filter(
+          (item) =>
+            item.role === "user" &&
+            (item.attachments || []).some((file) => file.type === "zip"),
+        )
+        .slice(-2)
+        .flatMap((item) =>
+          item.attachments
+            .filter((file) => file.type === "zip")
+            .map((file) => file.documentId),
+        ),
+    ]),
+  ].filter(Boolean);
+
+  // every document must belong to the user
+  if (documentIds.length > 0) {
+    const owned = await Document.countDocuments({
+      _id: { $in: documentIds },
+      userId: req.user._id,
+    });
+    if (owned !== documentIds.length) {
+      res.status(403);
+      throw new Error("Invalid Document...");
+    }
+  }
+
+  // zip context for the AI: tree + entry files + search hits (empty without zips)
+  const docContext = await buildDocContext({
+    documentIds,
+    query: `${message}\n${lastUserText(recentMessages)}`,
+  });
+
+  const userContent = buildUserContent(message, attachments, allowImages, docContext);
 
   openStream(res);
   const send = makeSender(res);
@@ -365,6 +408,7 @@ const streamAgent = async (req, res) => {
         attachments,
         errorLog,
         files: baseFiles,
+        docContext,
         signal,
         send,
       });
@@ -490,6 +534,7 @@ const streamAgent = async (req, res) => {
         attachments: attachments.map((file) => ({
           url: file.url,
           publicId: file.publicId,
+          documentId: file.documentId,
           name: file.name,
           type: file.type,
           text: file.text,

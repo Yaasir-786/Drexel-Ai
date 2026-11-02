@@ -66,6 +66,7 @@ export const runCoderAgent = async ({
   attachments = [],
   errorLog,
   files,
+  docContext = "",
   signal,
   send,
 }) => {
@@ -81,7 +82,7 @@ export const runCoderAgent = async ({
   // with images and a vision model the user message becomes a content array
   const allowImages = Boolean(process.env.VISION_MODEL);
   const useVision = allowImages && attachments.some((file) => file.type === "image");
-  const userContent = buildUserContent(request, attachments, allowImages);
+  const userContent = buildUserContent(request, attachments, allowImages, docContext);
 
   const userText = [
     `MODE: ${plan.mode.toUpperCase()}`,

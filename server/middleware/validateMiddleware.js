@@ -41,23 +41,34 @@ const fileField = z.object({
     .max(200000, "File is too large"),
 });
 
-const attachmentField = z.object({
-  url: text("Url")
-    .url("Invalid attachment url")
-    .max(500)
-    .refine((url) => {
-      const cloud = process.env.CLOUDINARY_CLOUD_NAME;
-      return url.startsWith(
-        cloud
-          ? `https://res.cloudinary.com/${cloud}/`
-          : "https://res.cloudinary.com/",
-      );
-    }, "Attachment must be uploaded through delux.ai"),
-  publicId: z.string().max(200).optional(),
-  name: text("Attachment name").trim().min(1).max(100),
-  type: z.enum(["image", "pdf"]),
-  text: z.string().max(15000).optional(),
-});
+const attachmentName = text("Attachment name").trim().min(1).max(100);
+
+const attachmentField = z.union([
+  // image or pdf: stored in Cloudinary
+  z.object({
+    url: text("Url")
+      .url("Invalid attachment url")
+      .max(500)
+      .refine((url) => {
+        const cloud = process.env.CLOUDINARY_CLOUD_NAME;
+        return url.startsWith(
+          cloud
+            ? `https://res.cloudinary.com/${cloud}/`
+            : "https://res.cloudinary.com/",
+        );
+      }, "Attachment must be uploaded through delux.ai"),
+    publicId: z.string().max(200).optional(),
+    name: attachmentName,
+    type: z.enum(["image", "pdf"]),
+    text: z.string().max(15000).optional(),
+  }),
+  // zip: indexed on our server, only the document id is sent
+  z.object({
+    documentId: objectId,
+    name: attachmentName,
+    type: z.literal("zip"),
+  }),
+]);
 
 const numberFromForm = (value) =>
   typeof value === "string" && value.trim() !== "" ? Number(value) : value;

@@ -8,6 +8,7 @@ import {
   X,
   Square,
   FileText,
+  FileArchive,
 } from 'lucide-react';
 import Button from '../Button';
 import Badge from '../Badge';
@@ -17,6 +18,9 @@ import PromptGlow from '../PromptGlow';
 import Greeting from '../Greeting';
 import ChatImage from '../chat/ChatImage';
 import uploadService from '../../services/uploadService';
+
+// unique id for attachment chips
+const newId = () => Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
 export default function ChatPanel({
   messages = [],
@@ -54,7 +58,7 @@ export default function ChatPanel({
     if (onModeChange) onModeChange(newMode);
   };
 
-  // validate and keep the real File objects for the upload
+  // validate and keep the real File objects for the upload (zips index right away)
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
@@ -68,42 +72,91 @@ export default function ChatPanel({
         toast.error('You can attach at most 3 files');
         break;
       }
-      if (!allowed.includes(file.type)) {
-        toast.error(`${file.name}: only JPG, PNG and PDF files are allowed`);
+      const isZip =
+        file.type === 'application/zip' ||
+        file.type === 'application/x-zip-compressed' ||
+        file.name.toLowerCase().endsWith('.zip');
+      if (!allowed.includes(file.type) && !isZip) {
+        toast.error(`${file.name}: only JPG, PNG, PDF and ZIP files are allowed`);
         continue;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name} is larger than 5 MB`);
+      if (file.size > (isZip ? 20 : 5) * 1024 * 1024) {
+        toast.error(`${file.name} is larger than ${isZip ? '20 MB' : '5 MB'}`);
         continue;
       }
-      next.push({
-        file,
-        name: file.name,
-        size: (file.size / (1024 * 1024)).toFixed(1),
-        // local preview url for images, null for PDFs
-        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-      });
+      if (isZip) {
+        next.push({ id: newId(), name: file.name, isZip: true, indexing: true, uploaded: null, zipFile: file });
+      } else {
+        next.push({
+          id: newId(),
+          file,
+          name: file.name,
+          size: (file.size / (1024 * 1024)).toFixed(1),
+          // local preview url for images, null for PDFs
+          preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+        });
+      }
     }
 
     setAttachments(next);
+
+    // index zip files immediately, so they are ready when the user sends
+    next.forEach((entry) => {
+      if (!entry.isZip) return;
+      uploadService
+        .uploadFiles(user?.token, [entry.zipFile])
+        .then((uploaded) => {
+          setAttachments((prev) =>
+            prev.map((att) =>
+              att.id === entry.id
+                ? { ...att, indexing: false, uploaded: uploaded[0], zipFile: null }
+                : att,
+            ),
+          );
+        })
+        .catch(() => {
+          setAttachments((prev) => prev.filter((att) => att.id !== entry.id));
+          toast.error(`${entry.name}: could not index the ZIP file`);
+        });
+    });
   };
 
-  const handleRemoveAttachment = (index) => {
-    setAttachments(attachments.filter((_, i) => i !== index));
+  const handleRemoveAttachment = (id) => {
+    setAttachments(attachments.filter((att) => att.id !== id));
   };
+
+  // block sending while a zip is still being indexed
+  const isIndexing = attachments.some((att) => att.isZip && att.indexing);
 
   // upload the attached files first, then hand the stored objects to the builder
   const handleSend = async (e) => {
     e.preventDefault();
-    if ((!inputText.trim() && attachments.length === 0) || isGenerating || isUploading) return;
+    if (
+      (!inputText.trim() && attachments.length === 0) ||
+      isGenerating ||
+      isUploading ||
+      isIndexing
+    )
+      return;
 
-    let uploaded = [];
-    if (attachments.length > 0) {
+    // zips are already indexed, images and PDFs upload now
+    let uploaded = attachments
+      .filter((att) => att.isZip && att.uploaded)
+      .map((att) => ({
+        documentId: att.uploaded.documentId,
+        name: att.uploaded.name,
+        type: 'zip',
+      }));
+
+    const plainFiles = attachments.filter((att) => !att.isZip);
+    if (plainFiles.length > 0) {
       try {
         setIsUploading(true);
-        uploaded = await uploadService.uploadFiles(
-          user?.token,
-          attachments.map((att) => att.file),
+        uploaded = uploaded.concat(
+          await uploadService.uploadFiles(
+            user?.token,
+            plainFiles.map((att) => att.file),
+          ),
         );
       } catch (error) {
         toast.error('File upload failed. Please try again.');
@@ -185,6 +238,8 @@ export default function ChatPanel({
                               alt={att.name}
                               className="w-4 h-4 rounded object-cover shrink-0"
                             />
+                          ) : att.type === 'zip' ? (
+                            <FileArchive size={10} />
                           ) : (
                             <Paperclip size={10} />
                           )}
@@ -270,12 +325,14 @@ export default function ChatPanel({
         {attachments.length > 0 && (
           <div className="flex flex-col gap-1">
             <div className="flex flex-wrap gap-1.5">
-              {attachments.map((att, i) => (
+              {attachments.map((att) => (
                 <div
-                  key={i}
+                  key={att.id}
                   className="inline-flex items-center gap-1.5 bg-surface border border-line rounded-lg px-2 py-1 text-[11px] text-ink"
                 >
-                  {att.preview ? (
+                  {att.isZip ? (
+                    <FileArchive size={13} className="text-muted shrink-0" />
+                  ) : att.preview ? (
                     <img
                       src={att.preview}
                       alt={att.name}
@@ -284,10 +341,19 @@ export default function ChatPanel({
                   ) : (
                     <FileText size={13} className="text-muted shrink-0" />
                   )}
-                  <span className="truncate max-w-[120px]">{att.name}</span>
+                  <div className="flex flex-col leading-tight min-w-0">
+                    <span className="truncate max-w-[120px]">{att.name}</span>
+                    {att.isZip && (
+                      <span className="text-[9px] text-muted">
+                        {att.indexing
+                          ? 'Indexing...'
+                          : `Indexed ${att.uploaded?.fileCount ?? 0} files`}
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
-                    onClick={() => handleRemoveAttachment(i)}
+                    onClick={() => handleRemoveAttachment(att.id)}
                     className="text-muted hover:text-red-500 cursor-pointer"
                   >
                     <X size={12} />
@@ -295,7 +361,7 @@ export default function ChatPanel({
                 </div>
               ))}
             </div>
-            <span className="text-[10px] text-muted">Max 3 files, 5 MB, JPG PNG PDF</span>
+            <span className="text-[10px] text-muted">Max 3 files. JPG PNG PDF ZIP</span>
           </div>
         )}
 
@@ -306,7 +372,7 @@ export default function ChatPanel({
               type="file"
               ref={fileInputRef}
               onChange={handleFileSelect}
-              accept=".jpg,.jpeg,.png,.pdf"
+              accept=".jpg,.jpeg,.png,.pdf,.zip"
               multiple
               className="hidden"
             />
@@ -314,7 +380,7 @@ export default function ChatPanel({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={attachments.length >= 3}
-              title="Attach files (Max 3, JPG PNG PDF)"
+              title="Attach files (Max 3, JPG PNG PDF ZIP)"
               className="p-2 rounded-xl text-muted hover:text-ink hover:bg-surface border border-line cursor-pointer disabled:opacity-40"
             >
               <Paperclip size={18} />
@@ -361,7 +427,11 @@ export default function ChatPanel({
             <Button
               variant="primary"
               onClick={handleSend}
-              disabled={(!inputText.trim() && attachments.length === 0) || isUploading}
+              disabled={
+                (!inputText.trim() && attachments.length === 0) ||
+                isUploading ||
+                isIndexing
+              }
               className="h-9! px-4 text-xs"
               icon={Send}
             >

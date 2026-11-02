@@ -4,10 +4,11 @@ export const MAX_CHAT_MESSAGES = 200;
 
 const attachmentSchema = new mongoose.Schema(
   {
-    url: { type: String, required: true },
+    url: { type: String },
     publicId: { type: String },
+    documentId: { type: mongoose.Schema.Types.ObjectId },
     name: { type: String },
-    type: { type: String, enum: ["image", "pdf"] },
+    type: { type: String, enum: ["image", "pdf", "zip"] },
     text: { type: String, maxlength: 15000 },
   },
   { _id: false },
