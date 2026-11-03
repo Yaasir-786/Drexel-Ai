@@ -1,5 +1,5 @@
 // CodePanel component: flat file tree, open tabs, line numbers, and code viewer/editor
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FileCode,
   X,
@@ -15,6 +15,8 @@ export default function CodePanel({
   readOnly = false,
   initialFile = null,
   isNew = false,
+  onSave,
+  isSaving = false,
 }) {
   const sortedPaths = Object.keys(files || {}).sort();
 
@@ -68,9 +70,30 @@ export default function CodePanel({
     setIsEdited(true);
   };
 
-  const handleSave = () => {
-    setIsEdited(false);
+  const handleSave = async () => {
+    if (!onSave || isSaving) return;
+    try {
+      // the parent gets the edited files as [{ path, content }]
+      await onSave(
+        Object.entries(fileMap).map(([path, content]) => ({ path, content })),
+      );
+      setIsEdited(false);
+    } catch {
+      // the parent shows the error toast
+    }
   };
+
+  // Ctrl/Cmd+S saves the edited files
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (isEdited && !isSaving) handleSave();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   const handleCopy = () => {
     const code = fileMap[currentActiveFile] || '';
@@ -162,10 +185,11 @@ export default function CodePanel({
               <Button
                 variant="primary"
                 onClick={handleSave}
+                disabled={isSaving}
                 className="h-7 px-3 text-xs"
                 icon={Save}
               >
-                Save changes
+                {isSaving ? "Saving..." : "Save changes"}
               </Button>
             )}
           </div>

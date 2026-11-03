@@ -25,7 +25,6 @@ const newId = () => Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 
 export default function ChatPanel({
   messages = [],
-  onClearChat,
   onSendMessage,
   isGenerating = false,
   onStopGenerating,
@@ -192,9 +191,6 @@ export default function ChatPanel({
           <span className="text-xs font-semibold text-ink uppercase tracking-wider">Chat</span>
           <Badge variant={mode === 'Build' ? 'purple' : 'primary'}>{mode}</Badge>
         </div>
-        <Button variant="ghost" onClick={onClearChat} className="h-8 px-2 text-xs">
-          Clear chat
-        </Button>
       </div>
 
       {/* Message List */}

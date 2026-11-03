@@ -21,6 +21,7 @@ Rules:
 - Never output <file> tags and never write a whole project in chat.
 - Keep answers concise and friendly.
 - Use the CURRENT PROJECT FILES section only when the question is about the existing project. For any other question answer normally and ignore the files.
+- If a web page the user shared could not be read, say so plainly and never guess what the site contains.
 
 ${LANGUAGE_RULE}
 
@@ -188,7 +189,7 @@ const safeName = (name = "file") =>
     .replace(/[^A-Za-z0-9._\- ]/g, "_")
     .slice(0, 80);
 
-// PDF text goes inside <untrusted_document>, images only when a vision model is configured
+// PDF text and read web pages go inside <untrusted_document>, images only when a vision model is configured
 export const buildUserContent = (
   message,
   attachments = [],
@@ -198,12 +199,13 @@ export const buildUserContent = (
   let text = message || "";
 
   attachments
-    .filter((file) => file.type === "pdf")
+    .filter((file) => file.type === "pdf" || file.type === "link")
     .forEach((file) => {
-      // scanned or broken PDFs have no text -> tell the model about it
+      // the extracted text goes to the model as data
       if (file.text) {
         text += `\n\n<untrusted_document name="${safeName(file.name)}">\n${stripReservedTags(file.text)}\n</untrusted_document>`;
-      } else {
+      } else if (file.type === "pdf") {
+        // scanned or broken PDFs have no text -> tell the model about it
         text += `\n\n[PDF has no readable text (maybe scanned)]`;
       }
     });

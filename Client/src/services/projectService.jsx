@@ -40,6 +40,18 @@ const deleteProject = async (token, id) => {
   return response.data;
 };
 
+// saves the files edited by the user in the code editor (replaces the file list)
+const saveFiles = async (token, id, files) => {
+  const response = await axios.put(
+    `/api/projects/${id}/files`,
+    { files },
+    {
+      headers: { authorization: `Bearer ${token}` },
+    }
+  );
+  return response.data;
+};
+
 const getChat = async (token, id) => {
   const response = await axios.get(`/api/projects/${id}/chat`, {
     headers: { authorization: `Bearer ${token}` },
@@ -70,6 +82,7 @@ const projectService = {
   createProject,
   renameProject,
   deleteProject,
+  saveFiles,
   getChat,
 };
 

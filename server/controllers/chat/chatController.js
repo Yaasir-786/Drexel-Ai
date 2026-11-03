@@ -106,25 +106,6 @@ const getChat = async (req, res) => {
   });
 };
 
-const clearChat = async (req, res) => {
-  const project = await Project.findOne({
-    _id: req.params.id,
-    user: req.user._id,
-  }).select("messages");
-
-  if (!project) {
-    res.status(404);
-    throw new Error("Project Not Found...");
-  }
-
-  // clean up cloudinary assets and indexed zips without blocking the response
-  cleanupChatAssets({ messages: project.messages || [] });
-
-  await Project.updateOne({ _id: project._id }, { $set: { messages: [] } });
-
-  res.status(200).json({ message: "Chat Cleared SuccessFully..." });
-};
-
 // GET /api/chats/:id/zip: the files of the chat as a downloadable zip
 const downloadChatZip = async (req, res) => {
   const chat = await Chat.findOne({
@@ -251,7 +232,6 @@ const chatController = {
   downloadChatZip,
   deleteChat,
   getChat,
-  clearChat,
 };
 
 export default chatController;

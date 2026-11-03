@@ -7,7 +7,6 @@ export const PROJECT_LIMITS = {
   maxFiles: 100,
   maxFileChars: 200000,
   maxTotalChars: 600000,
-  maxVersions: 8,
 };
 
 const fileSchema = new mongoose.Schema(
@@ -23,18 +22,6 @@ const fileSchema = new mongoose.Schema(
   },
   { _id: false },
 );
-
-const versionSchema = new mongoose.Schema({
-  label: {
-    type: String,
-    default: "",
-  },
-  files: [fileSchema],
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
 
 const projectSchema = new mongoose.Schema(
   {
@@ -55,7 +42,6 @@ const projectSchema = new mongoose.Schema(
     messages: [messageSchema],
     creditsUsed: { type: Number, default: 0 },
     tokensUsed: { type: Number, default: 0 },
-    versions: [versionSchema],
   },
   {
     timestamps: true,

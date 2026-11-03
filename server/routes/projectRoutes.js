@@ -30,12 +30,5 @@ router.put(
   validate(schemas.saveFiles),
   projectController.saveFiles,
 );
-router.get("/:id/versions", protect.forUser, validateId("id"), projectController.getVersions);
-router.post(
-  "/:id/versions/:versionId/restore",
-  protect.forUser,
-  validateId("id", "versionId"),
-  projectController.restoreVersion,
-);
 
 export default router;

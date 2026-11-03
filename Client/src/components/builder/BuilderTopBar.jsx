@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Pencil,
-  History,
   Download,
   Coins,
   MoreVertical,
@@ -18,7 +17,6 @@ import { useSelector } from 'react-redux';
 export default function BuilderTopBar({
   projectName,
   onRenameProject,
-  onOpenHistory,
   onDownloadZip,
   onOpenMobileMenu,
   canPreview,
@@ -127,15 +125,6 @@ export default function BuilderTopBar({
         <div className="hidden md:flex items-center gap-2">
           <Button
             variant="secondary"
-            onClick={onOpenHistory}
-            className="h-10 px-3 text-xs"
-            icon={History}
-          >
-            Version history
-          </Button>
-
-          <Button
-            variant="secondary"
             onClick={handleDownloadZip}
             className="h-10 px-3 text-xs"
             icon={Download}
@@ -157,16 +146,6 @@ export default function BuilderTopBar({
 
           {mobileMenuOpen && (
             <div className="absolute right-0 top-11 w-44 bg-card border border-line rounded-xl shadow-lg py-1 z-30">
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenHistory();
-                  setMobileMenuOpen(false);
-                }}
-                className="w-full px-3 py-2 text-left text-xs font-medium text-ink hover:bg-surface flex items-center gap-2 cursor-pointer"
-              >
-                <History size={16} /> Version history
-              </button>
               <button
                 type="button"
                 onClick={() => {

@@ -47,7 +47,6 @@ Building even a small website needs design, code, setup and debugging. Drexel-Ai
 - Chat panel + live **Preview** + **Code** panel (editable, with Copy) in one screen
 - **Fix with AI**: a preview error can be sent straight to the Coder with one click
 - **Download ZIP** of the whole project
-- Files are saved automatically and a version snapshot is created for every AI change
 
 ### 3. Smart Technology Selection
 
@@ -161,7 +160,7 @@ The Planner picks the technology from the request instead of always generating R
 4. Review pass → Fix pass → (Security check when the project is large)
         │
         ▼
-5. Files are saved (chat or project) + a version snapshot is created
+5. Files are saved (chat or project)
         │
         ▼
 6. The client shows the Preview / Code panel, or a file list with downloads
@@ -208,7 +207,7 @@ Request body: `{ projectId | chatId, message, mode: "chat" | "build", type?: "pr
 User     { name, email, phone, password, userType (USER | ADMIN), isActive,
            credits, dailyUsed, dailyDate, onboardingDone, onboarding{} }
 
-Project  { user, name, files[{ path, content }], versions[], messages[],
+Project  { user, name, files[{ path, content }], messages[],
            creditsUsed, tokensUsed }           ← only projects created by the user
 
 Chat     { user, title, messages[], files[{ path, content }], preview,

@@ -8,6 +8,5 @@ const { validateId } = validation;
 
 // mounted on /api/projects  ->  /api/projects/:id/chat
 router.get("/:id/chat", protect.forUser, validateId("id"), chatController.getChat);
-router.delete("/:id/chat", protect.forUser, validateId("id"), chatController.clearChat);
 
 export default router;

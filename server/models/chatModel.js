@@ -8,7 +8,7 @@ const attachmentSchema = new mongoose.Schema(
     publicId: { type: String },
     documentId: { type: mongoose.Schema.Types.ObjectId },
     name: { type: String },
-    type: { type: String, enum: ["image", "pdf", "zip"] },
+    type: { type: String, enum: ["image", "pdf", "zip", "link"] },
     text: { type: String, maxlength: 15000 },
   },
   { _id: false },

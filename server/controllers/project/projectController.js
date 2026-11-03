@@ -30,7 +30,7 @@ const getSingleProject = async (req, res) => {
   const project = await Project.findOne({
     _id: req.params.id,
     user: req.user._id,
-  }).select("-versions -messages");
+  }).select("-messages");
 
   if (!project) {
     res.status(404);
@@ -51,7 +51,7 @@ const updateProject = async (req, res) => {
     throw new Error("Project Not Found...");
   }
 
-  const project = await Project.findById(req.params.id).select("-versions -messages");
+  const project = await Project.findById(req.params.id).select("-messages");
 
   res.status(200).json(project);
 };
@@ -96,70 +96,9 @@ const saveFiles = async (req, res) => {
     throw new Error("Project Not Found...");
   }
 
-  const project = await Project.findById(req.params.id).select("-versions -messages");
+  const project = await Project.findById(req.params.id).select("-messages");
 
   res.status(200).json(project);
-};
-
-const getVersions = async (req, res) => {
-  const project = await Project.findOne({
-    _id: req.params.id,
-    user: req.user._id,
-  }).select("versions");
-
-  if (!project) {
-    res.status(404);
-    throw new Error("Project Not Found...");
-  }
-
-  const versions = project.versions
-    .map((version) => ({
-      _id: version._id,
-      label: version.label,
-      fileCount: version.files.length,
-      createdAt: version.createdAt,
-    }))
-    .reverse();
-
-  res.status(200).json(versions);
-};
-
-const restoreVersion = async (req, res) => {
-  const project = await Project.findOne({
-    _id: req.params.id,
-    user: req.user._id,
-  }).select("versions");
-
-  if (!project) {
-    res.status(404);
-    throw new Error("Project Not Found...");
-  }
-
-  const version = project.versions.id(req.params.versionId);
-
-  if (!version) {
-    res.status(404);
-    throw new Error("Version Not Found...");
-  }
-
-  const files = version.files.map((file) => ({ path: file.path, content: file.content }));
-
-  await Project.updateOne(
-    { _id: project._id },
-    {
-      $set: { files },
-      $push: {
-        versions: {
-          $each: [{ label: `Restored: ${version.label}`.slice(0, 100), files }],
-          $slice: -PROJECT_LIMITS.maxVersions,
-        },
-      },
-    },
-  );
-
-  const restored = await Project.findById(project._id).select("versions");
-
-  res.status(200).json(restored);
 };
 
 const projectController = {
@@ -169,8 +108,6 @@ const projectController = {
   updateProject,
   deleteProject,
   saveFiles,
-  getVersions,
-  restoreVersion,
 };
 
 export default projectController;

@@ -9,7 +9,6 @@ import BuilderTopBar from '../components/builder/BuilderTopBar';
 import ChatPanel from '../components/builder/ChatPanel';
 import PreviewPanel from '../components/builder/PreviewPanel';
 import CodePanel from '../components/builder/CodePanel';
-import VersionHistory from '../components/builder/VersionHistory';
 import Sidebar from '../components/layout/Sidebar';
 import projectService, { mapMessages } from '../services/projectService';
 import agentService from '../services/agentService';
@@ -49,7 +48,7 @@ export default function Builder() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isWritingFiles, setIsWritingFiles] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Preview/Code workspace: closed by default, opened only from the Preview button
@@ -75,8 +74,9 @@ export default function Builder() {
 
   useEffect(() => {
     setCurrentProjectId(id === 'new' ? null : id);
-    // the workspace starts closed on every project
-    setShowWorkspace(false);
+    // the workspace starts closed on every project, but not right after a
+    // new project was created in this session (the id just changed to it)
+    if (id !== currentProjectId) setShowWorkspace(false);
     if (id === 'new') {
       setProjectName('Untitled Project');
       setMessages([]);
@@ -123,6 +123,9 @@ export default function Builder() {
     let projectId = currentProjectId;
     let isCreated = false;
     let typer;
+
+    // remember if the project had files before, so only the first build auto-opens the preview
+    const hadFilesBefore = files.length > 0;
 
     try {
       if (id === "new" || !projectId) {
@@ -238,6 +241,15 @@ export default function Builder() {
       }
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["projectChat", projectId] });
+
+      // auto-open the workspace after the FIRST build of a new project (desktop only)
+      if (
+        !hadFilesBefore &&
+        doneData?.changedFiles?.length > 0 &&
+        window.innerWidth >= 1024
+      ) {
+        setShowWorkspace(true);
+      }
     } catch (error) {
       typer?.stop();
       if (error.name !== "AbortError") {
@@ -261,8 +273,22 @@ export default function Builder() {
     controllerRef.current?.abort();
   };
 
-  const handleClearChat = () => {
-    setMessages([]);
+  // save the code-editor changes to the project (the next build reads them from the DB)
+  const handleSaveFiles = async (savedFiles) => {
+    const targetId = currentProjectId || id;
+    if (!targetId || targetId === 'new' || isGenerating || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      const project = await projectService.saveFiles(user?.token, targetId, savedFiles);
+      setFiles(project.files || []);
+      toast.success("Changes saved");
+      queryClient.invalidateQueries({ queryKey: ["project", targetId] });
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Could not save changes");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // image edit flow: optimistic bubbles around the image-edit API call
@@ -348,7 +374,7 @@ export default function Builder() {
         <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} onFixError={handleFixError} />
       </div>
       <div className={activeTab === "code" ? "h-full" : "hidden"}>
-        <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} />
+        <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} onSave={handleSaveFiles} isSaving={isSaving || isGenerating} />
       </div>
     </>
   );
@@ -379,7 +405,6 @@ export default function Builder() {
         <BuilderTopBar
           projectName={projectName}
           onRenameProject={handleRename}
-          onOpenHistory={() => setIsHistoryOpen(true)}
           onDownloadZip={() => downloadZip(files, projectName)}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           canPreview={hasGeneratedCode}
@@ -399,7 +424,6 @@ export default function Builder() {
           >
             <ChatPanel
               messages={messages}
-              onClearChat={handleClearChat}
               onSendMessage={handleSendMessage}
               isGenerating={isGenerating}
               onStopGenerating={handleStopGenerating}
@@ -422,12 +446,6 @@ export default function Builder() {
           )}
         </div>
       </div>
-
-      {/* Version History Drawer */}
-      <VersionHistory
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-      />
     </div>
   );
 }
