@@ -8,10 +8,12 @@ import { stripReservedTags } from "../../agents/prompts.js";
 
 const MAX_PDF_TEXT = 15000;
 
-// zip indexing guards
-const MAX_ZIP_ENTRIES = 3000;
-const MAX_ZIP_UNCOMPRESSED = 100 * 1024 * 1024;
-const MAX_ZIP_TEXT = 3 * 1024 * 1024;
+// zip indexing guards (env configurable)
+const MAX_ZIP_ENTRIES = Number(process.env.MAX_ZIP_ENTRIES) || 8000;
+const MAX_ZIP_UNCOMPRESSED =
+  (Number(process.env.MAX_ZIP_UNCOMPRESSED_MB) || 300) * 1024 * 1024;
+const MAX_ZIP_TEXT =
+  (Number(process.env.MAX_ZIP_TEXT_MB) || 8) * 1024 * 1024;
 const MAX_ZIP_FILE_SIZE = 300 * 1024;
 const ZIP_CHUNK_SIZE = 1500;
 
@@ -52,13 +54,15 @@ const processZip = (buffer) => {
   const entries = zip.getEntries();
 
   if (entries.length > MAX_ZIP_ENTRIES) {
-    throw new Error("ZIP Has Too Many Files (Max 3000)...");
+    throw new Error(`ZIP Has Too Many Files (Max ${MAX_ZIP_ENTRIES})...`);
   }
 
   let uncompressed = 0;
   for (const entry of entries) uncompressed += entry.header.size;
   if (uncompressed > MAX_ZIP_UNCOMPRESSED) {
-    throw new Error("ZIP Is Too Large When Unpacked (Max 100 MB)...");
+    throw new Error(
+      `ZIP Is Too Large When Unpacked (Max ${MAX_ZIP_UNCOMPRESSED / (1024 * 1024)} MB)...`,
+    );
   }
 
   const kept = [];
@@ -105,8 +109,23 @@ const uploadFiles = async (req, res) => {
 
   for (const file of req.files) {
     if (file.kind === "zip") {
-      // zips are indexed for text search, never stored on disk or Cloudinary
+      // zips are indexed for text search; the original bytes also go to Cloudinary
       const parsed = processZip(file.buffer);
+
+      // keep the original zip so the chat can hand it back as a download
+      let zipUrl = null;
+      let zipPublicId = null;
+      try {
+        const uploaded = await cloudinaryService.uploadToCloudinary(file.buffer, {
+          public_id: `delux_${req.user._id}_${crypto.randomUUID()}`,
+          resource_type: "raw",
+        });
+        zipUrl = uploaded.secure_url;
+        zipPublicId = uploaded.public_id;
+      } catch (error) {
+        // indexing still worked, the download falls back to the rebuilt text files
+        console.log(`ZIP UPLOAD FAILED... ${error.message}`);
+      }
 
       const document = await Document.create({
         userId: req.user._id,
@@ -114,6 +133,8 @@ const uploadFiles = async (req, res) => {
         tree: parsed.tree,
         fileCount: parsed.fileCount,
         skippedCount: parsed.skippedCount,
+        zipUrl,
+        zipPublicId,
       });
 
       if (parsed.chunks.length > 0) {

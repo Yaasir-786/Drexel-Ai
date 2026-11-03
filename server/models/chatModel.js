@@ -47,6 +47,10 @@ export const messageSchema = new mongoose.Schema(
     attachments: [attachmentSchema],
     images: [imageSchema],
     files: [String],
+    zip: {
+      name: { type: String },
+      fileCount: { type: Number },
+    },
     tokensUsed: {
       type: Number,
       default: 0,

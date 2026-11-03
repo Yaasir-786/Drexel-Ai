@@ -24,6 +24,7 @@ import {
   formatPlan,
   imageRequestText,
   lastUserText,
+  isZipRequest,
 } from "../../agents/plannerAgent.js";
 import { runCoderAgent } from "../../agents/coderAgent.js";
 import { buildDocContext } from "../../agents/docContext.js";
@@ -53,6 +54,45 @@ const imageErrorMessage = (error) => {
   // deliberate user-facing messages stay, everything else stays generic
   if (error.friendly) return error.message;
   return friendlyLlmError(error);
+};
+
+// ---------- ZIP: package the files of the chat/project as a download (no LLM call, no credits) ----------
+const handleZipRequest = async ({ send, addRecord, convo, currentFiles }) => {
+  // the last uploaded zip in the messages decides if there is anything to package
+  let lastZipAttachment = null;
+  for (const item of convo.messages || []) {
+    const found = (item.attachments || []).find((file) => file.type === "zip");
+    if (found) lastZipAttachment = found;
+  }
+
+  if (currentFiles.length > 0 || lastZipAttachment) {
+    // the file count: built files + indexed files of the uploaded zip
+    const doc = lastZipAttachment?.documentId
+      ? await Document.findById(lastZipAttachment.documentId)
+          .select("fileCount")
+          .lean()
+      : null;
+    const name = convo.title || convo.name || "files";
+    const fileCount = currentFiles.length + (doc?.fileCount || 0);
+
+    send("zip", { name, fileCount });
+    addRecord({
+      agent: "planner",
+      recordMode: "chat",
+      content: "Here is your zip file.",
+      tokens: 0,
+      zip: { name, fileCount },
+    });
+  } else {
+    const reply = "There are no files yet. Ask me to build something first.";
+    send("token", { agent: "planner", phase: "chat", text: reply });
+    addRecord({
+      agent: "planner",
+      recordMode: "chat",
+      content: reply,
+      tokens: 0,
+    });
+  }
 };
 
 // ---- Server Sent Events helpers ----
@@ -248,6 +288,7 @@ const streamAgent = async (req, res) => {
     tokens: ownTokens,
     files = [],
     images = [],
+    zip = null,
   }) => {
     const tokens = ownTokens + pendingTokens;
     pendingTokens = 0;
@@ -261,6 +302,7 @@ const streamAgent = async (req, res) => {
       content,
       files,
       images,
+      ...(zip && { zip }),
       tokensUsed: tokens,
       creditsUsed,
     });
@@ -269,10 +311,16 @@ const streamAgent = async (req, res) => {
   try {
     send("meta", { projectId: project?._id, chatId: chat?._id || null, mode, type });
 
-    let goBuild = mode === "build" || type === "fix";
+    // cheap keyword check: the user just wants a zip of the files (works in chat and build mode)
+    const zipRequest = isZipRequest(message);
 
-    // ---------- CHAT: Planner Agent answers (or detects that the user wants a build) ----------
-    if (!goBuild) {
+    let goBuild = !zipRequest && (mode === "build" || type === "fix");
+
+    // ---------- ZIP: hand over the files as a download (no LLM call, no credits) ----------
+    if (zipRequest) {
+      await handleZipRequest({ send, addRecord, convo, currentFiles });
+    } else if (!goBuild) {
+      // ---------- CHAT: Planner Agent answers (or detects that the user wants a build) ----------
       send("status", { agent: "planner", message: "Planner is thinking..." });
 
       const intent = await classifyIntent({
@@ -280,12 +328,17 @@ const streamAgent = async (req, res) => {
         // the plain message only: userContent already contains the zip/PDF text
         content: message,
         hasFiles: currentFiles.length > 0,
+        hasImages,
         signal,
       });
       pendingTokens = intent.tokens;
       goBuild = intent.intent === "BUILD";
 
-      if (intent.intent === "IMAGE") {
+      if (intent.intent === "ZIP") {
+        // ---------- ZIP: the LLM detected a zip request the keyword check missed ----------
+        pendingTokens = 0;
+        await handleZipRequest({ send, addRecord, convo, currentFiles });
+      } else if (intent.intent === "IMAGE") {
         // ---------- IMAGE: generate a picture (no files, no build flow) ----------
         if (req.user.credits < IMAGE_CREDITS) {
           errored = true;

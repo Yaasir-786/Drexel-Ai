@@ -8,6 +8,8 @@ const ENTRY_FILE = /(^|\/)(readme[^\/]*|package\.json|index\.html|index\.[tj]sx?
 const DEF_PATTERNS = [
   /\bfunction\s+([A-Za-z_$][\w$]*)/,
   /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/,
+  // multi-line params: the => is on a later line
+  /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\($/,
   /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b/,
   /\bclass\s+([A-Za-z_$][\w$]*)/,
   /\bdef\s+([A-Za-z_]\w*)/,
@@ -65,22 +67,32 @@ const extractIdentifiers = (text) => {
   return [...ids].filter((id) => id.length > 1);
 };
 
+// words that never identify a function or file
+const STOP_WORDS = new Set([
+  "function", "method", "code", "file", "folder", "zip", "from", "show",
+  "give", "write", "make", "laake", "kar", "karo", "wala", "wali",
+  "the", "and", "for", "this", "that",
+]);
+
 // match rank: exact > starts/ends with > contains (case-insensitive)
 const rankMatch = (identifier, name) => {
   const id = identifier.toLowerCase();
   const target = name.toLowerCase();
   if (id === target) return 3;
   if (target.startsWith(id) || target.endsWith(id)) return 2;
-  if (target.includes(id) || id.includes(target)) return 1;
+  if (target.includes(id)) return 1;
+  // a short definition name is too generic for a contains match
+  if (target.length >= 4 && id.includes(target)) return 1;
   return 0;
 };
 
 // best matching definitions (max 5) and files (max 3) for the user's message
 const findMatches = (message, defs, files) => {
   const identifiers = extractIdentifiers(message);
+  // only meaningful words of 4+ chars take part in the matching
   const words = [
     ...new Set(String(message || "").toLowerCase().match(/[a-z_$][\w$]*/g) || []),
-  ].filter((word) => word.length > 2);
+  ].filter((word) => word.length >= 4 && !STOP_WORDS.has(word));
 
   const defMatches = [];
   for (const def of defs) {
@@ -138,21 +150,31 @@ const extractBlock = (text, startLine, isPython) => {
 };
 
 // exact code blocks for the definitions and files the user is asking about
-const extractExactCode = (message, defs, files) => {
+const extractExactCode = (message, defs, files, maxChars) => {
   const { defs: defMatches, files: fileMatches } = findMatches(message, defs, files);
   const blocks = [];
-  const filePaths = new Set(fileMatches.map((file) => file.path));
 
-  // whole files whose name the user asked for (cap 8000 chars)
+  // whole files only when they fit whole, otherwise just list their functions
+  const wholePaths = new Set();
   for (const file of fileMatches) {
-    const text = file.text.slice(0, 8000);
-    const lines = text.split("\n").length;
-    blocks.push(`--- ${file.path} (lines 1-${lines}) ---\n${text}`);
+    if (file.text.length <= 8000) {
+      wholePaths.add(file.path);
+      const lines = file.text.split("\n").length;
+      blocks.push(`--- ${file.path} (lines 1-${lines}) ---\n${file.text}`);
+    } else {
+      const names = defs
+        .filter((def) => def.path === file.path)
+        .slice(0, 60)
+        .map((def) => def.name);
+      if (names.length > 0) {
+        blocks.push(`FUNCTIONS IN ${file.path}: ${names.join(", ")}`);
+      }
+    }
   }
 
-  // full function/class bodies (cap 6000 chars), skipped for matched files
+  // full function/class bodies (cap 6000 chars), skipped for included whole files
   for (const def of defMatches) {
-    if (filePaths.has(def.path)) continue;
+    if (wholePaths.has(def.path)) continue;
     const file = files.find((f) => f.path === def.path);
     if (!file) continue;
     const block = extractBlock(file.text, def.line, file.path.endsWith(".py"));
@@ -161,7 +183,15 @@ const extractExactCode = (message, defs, files) => {
     );
   }
 
-  return blocks;
+  // cap the total exact-code size
+  let total = 0;
+  const capped = [];
+  for (const block of blocks) {
+    if (total > 0 && total + block.length > maxChars) break;
+    capped.push(block);
+    total += block.length;
+  }
+  return capped;
 };
 
 // merge adjacent chunks of the same file into one block, sorted by path and order
@@ -229,6 +259,7 @@ export const buildDocContext = async ({
     message || query,
     indexDefinitions(files),
     files,
+    maxChars,
   );
   let used = 0;
   const exactBlocks = [];

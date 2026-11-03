@@ -17,6 +17,7 @@ import RunStatus from '../RunStatus';
 import PromptGlow from '../PromptGlow';
 import Greeting from '../Greeting';
 import ChatImage from '../chat/ChatImage';
+import ZipCard from '../chat/ZipCard';
 import uploadService from '../../services/uploadService';
 
 // unique id for attachment chips
@@ -36,6 +37,7 @@ export default function ChatPanel({
   onImageEditStart,
   onImageEditSuccess,
   onImageEditError,
+  onDownloadZip,
 }) {
   const [inputText, setInputText] = useState('');
   const [mode, setMode] = useState(activeMode); // 'Chat' or 'Build'
@@ -48,6 +50,15 @@ export default function ChatPanel({
   const lastMessage = messages[messages.length - 1];
   const showStatus = isGenerating && (!lastMessage?.isStreaming || isWritingFiles);
   const label = isWritingFiles || /code|review/i.test(statusMessage) ? "Running a command" : "Thinking";
+
+  // only the last message with a zip shows the download card
+  let lastZipIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].zip) {
+      lastZipIndex = i;
+      break;
+    }
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -66,6 +77,7 @@ export default function ChatPanel({
 
     const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
     const next = [...attachments];
+    const newEntries = [];
 
     for (const file of files) {
       if (next.length >= 3) {
@@ -80,14 +92,14 @@ export default function ChatPanel({
         toast.error(`${file.name}: only JPG, PNG, PDF and ZIP files are allowed`);
         continue;
       }
-      if (file.size > (isZip ? 20 : 5) * 1024 * 1024) {
-        toast.error(`${file.name} is larger than ${isZip ? '20 MB' : '5 MB'}`);
+      if (file.size > (isZip ? 50 : 5) * 1024 * 1024) {
+        toast.error(`${file.name} is larger than ${isZip ? '50 MB' : '5 MB'}`);
         continue;
       }
       if (isZip) {
-        next.push({ id: newId(), name: file.name, isZip: true, indexing: true, uploaded: null, zipFile: file });
+        newEntries.push({ id: newId(), name: file.name, isZip: true, indexing: true, uploaded: null, zipFile: file });
       } else {
-        next.push({
+        newEntries.push({
           id: newId(),
           file,
           name: file.name,
@@ -97,12 +109,12 @@ export default function ChatPanel({
         });
       }
     }
+    next.push(...newEntries);
 
     setAttachments(next);
 
-    // index zip files immediately, so they are ready when the user sends
-    next.forEach((entry) => {
-      // only index the zips added in this call
+    // index only the zips added in this call, so they are ready when the user sends
+    newEntries.forEach((entry) => {
       if (!entry.isZip || !entry.zipFile) return;
       uploadService
         .uploadFiles(user?.token, [entry.zipFile])
@@ -281,6 +293,15 @@ export default function ChatPanel({
                         ))}
                       </div>
                     )}
+
+                    {/* Zip download card under the last assistant message with a zip */}
+                    {index === lastZipIndex && msg.zip && onDownloadZip && (
+                      <ZipCard
+                        name={msg.zip.name}
+                        fileCount={msg.zip.fileCount}
+                        onDownload={onDownloadZip}
+                      />
+                    )}
                   </div>
                 </div>
               );
@@ -362,7 +383,7 @@ export default function ChatPanel({
                 </div>
               ))}
             </div>
-            <span className="text-[10px] text-muted">Max 3 files. JPG PNG PDF ZIP</span>
+            <span className="text-[10px] text-muted">Max 3 files. JPG PNG PDF ZIP (ZIP max 50 MB)</span>
           </div>
         )}
 

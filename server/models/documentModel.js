@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-// an indexed ZIP project (the zip itself is never stored)
+// an indexed ZIP project (the original zip is kept on Cloudinary)
 const documentSchema = new mongoose.Schema(
   {
     userId: {
@@ -24,10 +24,17 @@ const documentSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    zipUrl: {
+      type: String,
+      default: null,
+    },
+    zipPublicId: {
+      type: String,
+      default: null,
+    },
     createdAt: {
       type: Date,
       default: Date.now,
-      expires: "30d",
     },
   },
 );

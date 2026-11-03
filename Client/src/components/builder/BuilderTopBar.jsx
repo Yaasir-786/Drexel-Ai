@@ -1,4 +1,4 @@
-// BuilderTopBar component: back button, inline editable project name, credits, and actions
+// BuilderTopBar component: mobile menu, back button, inline editable project name, preview, credits, and actions
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -8,6 +8,8 @@ import {
   Download,
   Coins,
   MoreVertical,
+  Menu,
+  Eye,
 } from 'lucide-react';
 import ThemeToggle from '../ThemeToggle';
 import Button from '../Button';
@@ -18,6 +20,10 @@ export default function BuilderTopBar({
   onRenameProject,
   onOpenHistory,
   onDownloadZip,
+  onOpenMobileMenu,
+  canPreview,
+  isPreviewOpen,
+  onOpenPreview,
 }) {
   const { user } = useSelector((state) => state.auth);
   const [isEditing, setIsEditing] = useState(false);
@@ -47,8 +53,18 @@ export default function BuilderTopBar({
 
   return (
     <header className="h-16 border-b border-line bg-card px-4 flex items-center justify-between shrink-0 sticky top-0 z-30">
-      {/* Left side: Back to /projects and editable project name */}
+      {/* Left side: mobile menu, back to /projects and editable project name */}
       <div className="flex items-center gap-3 min-w-0">
+        {/* Mobile sidebar menu button */}
+        <button
+          type="button"
+          onClick={onOpenMobileMenu}
+          aria-label="Open sidebar menu"
+          className="lg:hidden p-2 rounded-xl text-muted hover:text-ink hover:bg-surface border border-line shrink-0 cursor-pointer"
+        >
+          <Menu size={18} />
+        </button>
+
         <Link
           to="/projects"
           aria-label="Back to projects"
@@ -87,8 +103,20 @@ export default function BuilderTopBar({
         )}
       </div>
 
-      {/* Right side: credits pill, action buttons, theme toggle */}
+      {/* Right side: preview, credits pill, action buttons, theme toggle */}
       <div className="flex items-center gap-2.5 shrink-0">
+        {/* Preview button: only when the project has files and the workspace is closed */}
+        {canPreview && !isPreviewOpen && (
+          <Button
+            variant="secondary"
+            onClick={onOpenPreview}
+            icon={Eye}
+            className="h-8 px-3 text-xs"
+          >
+            Preview
+          </Button>
+        )}
+
         {/* Credits pill (ONE line) */}
         <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-line bg-surface text-xs font-medium text-ink whitespace-nowrap">
           <Coins size={14} className="text-[#0099FF] shrink-0" />

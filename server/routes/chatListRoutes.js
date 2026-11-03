@@ -14,6 +14,12 @@ router.post(
   chatController.createChat,
 );
 router.get("/:id", protect.forUser, validateId("id"), chatController.getChatById);
+router.get(
+  "/:id/zip",
+  protect.forUser,
+  validateId("id"),
+  chatController.downloadChatZip,
+);
 router.delete("/:id", protect.forUser, validateId("id"), chatController.deleteChat);
 
 export default router;

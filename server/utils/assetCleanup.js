@@ -16,18 +16,38 @@ const collectPublicIds = (messages = []) => {
   return [...ids];
 };
 
+// collects the zip document ids stored in messages
+const collectDocumentIds = (messages = []) =>
+  messages
+    .flatMap((message) => message.attachments || [])
+    .filter((file) => file.type === "zip" && file.documentId)
+    .map((file) => file.documentId);
+
 // deletes the cloudinary assets + indexed zips of one chat or project
 // failures are only logged, they never block the deletion
-export const cleanupChatAssets = async ({ messages = [], documentIds = [] }) => {
+export const cleanupChatAssets = async ({ messages = [], documentIds }) => {
   try {
     const publicIds = collectPublicIds(messages);
     for (const publicId of publicIds) {
       await cloudinaryService.deleteFromCloudinary(publicId).catch(() => {});
     }
 
-    if (documentIds.length > 0) {
-      await DocChunk.deleteMany({ documentId: { $in: documentIds } });
-      await Document.deleteMany({ _id: { $in: documentIds } });
+    const docIds = documentIds || collectDocumentIds(messages);
+    if (docIds.length > 0) {
+      // the original zip files of the documents also live on Cloudinary
+      const docs = await Document.find({ _id: { $in: docIds } })
+        .select("zipPublicId")
+        .lean();
+      for (const doc of docs) {
+        if (doc.zipPublicId) {
+          await cloudinaryService
+            .deleteFromCloudinary(doc.zipPublicId)
+            .catch(() => {});
+        }
+      }
+
+      await DocChunk.deleteMany({ documentId: { $in: docIds } });
+      await Document.deleteMany({ _id: { $in: docIds } });
     }
   } catch (error) {
     console.log(`ASSET CLEANUP FAILED: ${error.message}`);

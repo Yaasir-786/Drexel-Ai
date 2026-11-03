@@ -1,7 +1,7 @@
-// Builder page: full-screen IDE layout with conditional workspace (Code/Preview panels hidden until code generated)
+// Builder page: sidebar + chat by default, Preview/Code workspace opens on demand
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Code2, Eye } from 'lucide-react';
+import { Code2, Eye, X } from 'lucide-react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -10,6 +10,7 @@ import ChatPanel from '../components/builder/ChatPanel';
 import PreviewPanel from '../components/builder/PreviewPanel';
 import CodePanel from '../components/builder/CodePanel';
 import VersionHistory from '../components/builder/VersionHistory';
+import Sidebar from '../components/layout/Sidebar';
 import projectService, { mapMessages } from '../services/projectService';
 import agentService from '../services/agentService';
 import { getProfile } from '../features/auth/authSlice';
@@ -49,6 +50,10 @@ export default function Builder() {
   const [isWritingFiles, setIsWritingFiles] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Preview/Code workspace: closed by default, opened only from the Preview button
+  const [showWorkspace, setShowWorkspace] = useState(false);
 
   // Tab state: [preview | code]
   const [activeTab, setActiveTab] = useState('preview');
@@ -70,6 +75,8 @@ export default function Builder() {
 
   useEffect(() => {
     setCurrentProjectId(id === 'new' ? null : id);
+    // the workspace starts closed on every project
+    setShowWorkspace(false);
     if (id === 'new') {
       setProjectName('Untitled Project');
       setMessages([]);
@@ -188,6 +195,12 @@ export default function Builder() {
             }
           } else if (event === "image") {
             pushImageMessage(setMessages, data);
+          } else if (event === "zip") {
+            // zip download card for the assistant reply
+            setMessages((prev) => [
+              ...prev,
+              { type: "assistant", text: "Here is your zip file.", zip: data },
+            ]);
           } else if (event === "file_start") {
             setIsWritingFiles(true);
           } else if (event === "token") {
@@ -270,6 +283,8 @@ export default function Builder() {
   };
 
   const handleFixError = (errorMessage) => {
+    // on mobile the workspace is an overlay -> close it so the chat stays visible
+    if (window.innerWidth < 1024) setShowWorkspace(false);
     handleSendMessage(
       "The live preview shows an error. Find the cause and fix it.",
       "build",
@@ -281,111 +296,131 @@ export default function Builder() {
 
   const fileMap = Object.fromEntries(files.map((f) => [f.path, f.content]));
 
+  // workspace tabs + panels, shared by the desktop column and the mobile overlay
+  const workspace = (
+    <>
+      {/* Workspace Tab Selector */}
+      <div className="h-11 border-b border-line bg-card px-4 flex items-center justify-between shrink-0">
+        <div className="flex rounded-xl bg-surface border border-line p-0.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab('preview')}
+            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+              activeTab === 'preview'
+                ? 'bg-card text-ink shadow-xs border border-line/60 font-semibold'
+                : 'text-muted hover:text-ink'
+            }`}
+          >
+            <Eye size={14} className="text-[#0099FF]" />
+            <span>Preview</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('code')}
+            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+              activeTab === 'code'
+                ? 'bg-card text-ink shadow-xs border border-line/60 font-semibold'
+                : 'text-muted hover:text-ink'
+            }`}
+          >
+            <Code2 size={14} className="text-purple-500" />
+            <span>Code</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="text-[11px] text-muted font-mono">Sandbox Live</span>
+          {/* Close the workspace and return to the chat */}
+          <button
+            type="button"
+            onClick={() => setShowWorkspace(false)}
+            aria-label="Close workspace"
+            className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-surface cursor-pointer"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Workspace Content */}
+      <div className={activeTab === "preview" ? "h-full" : "hidden"}>
+        <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} onFixError={handleFixError} />
+      </div>
+      <div className={activeTab === "code" ? "h-full" : "hidden"}>
+        <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} />
+      </div>
+    </>
+  );
+
   return (
-    <div className="h-screen flex flex-col bg-page text-ink overflow-hidden">
-      {/* Builder Top Bar */}
-      <BuilderTopBar
-        projectName={projectName}
-        onRenameProject={handleRename}
-        onOpenHistory={() => setIsHistoryOpen(true)}
-        onDownloadZip={() => downloadZip(files, projectName)}
-      />
+    <div className="h-screen bg-page text-ink flex overflow-hidden">
+      {/* Desktop Fixed Left Sidebar */}
+      <div className="hidden lg:block fixed inset-y-0 left-0 w-[320px] z-40">
+        <Sidebar />
+      </div>
 
-      {/* Main Area */}
-      <div className="flex-1 flex min-h-0 overflow-hidden relative">
-        {/*
-          CONDITIONAL WORKSPACE:
-          - If hasGeneratedCode is false: Hide Preview & Code panels. ChatPanel takes full width!
-          - If hasGeneratedCode is true: Show ChatPanel (420px on desktop) + Preview/Code workspace!
-        */}
-        {!hasGeneratedCode ? (
-          // Full-width Chat layout when no application code is generated yet
-          <div className="w-full h-full flex flex-col items-center bg-card">
-            <div className="w-full max-w-4xl h-full flex flex-col">
-              <ChatPanel
-                messages={messages}
-                onClearChat={handleClearChat}
-                onSendMessage={handleSendMessage}
-                isGenerating={isGenerating}
-                onStopGenerating={handleStopGenerating}
-                activeMode="Build"
-                statusMessage={statusMessage}
-                isWritingFiles={isWritingFiles}
-                projectId={currentProjectId}
-                onImageEditStart={handleImageEditStart}
-                onImageEditSuccess={handleImageEditSuccess}
-                onImageEditError={handleImageEditError}
-              />
-            </div>
+      {/* Mobile Drawer Backdrop */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 lg:hidden backdrop-blur-xs animate-in fade-in"
+          onClick={() => setIsMobileMenuOpen(false)}>
+          <div
+            className="w-[320px] h-full"
+            onClick={(e) => e.stopPropagation()}>
+            <Sidebar onItemClick={() => setIsMobileMenuOpen(false)} />
           </div>
-        ) : (
-          // Full Split IDE when code has been generated
-          <div className="w-full h-full flex flex-col lg:flex-row">
-            {/* Desktop Left: ChatPanel fixed 420px */}
-            <div className="w-full lg:w-[420px] shrink-0 h-full">
-              <ChatPanel
-                messages={messages}
-                onClearChat={handleClearChat}
-                onSendMessage={handleSendMessage}
-                isGenerating={isGenerating}
-                onStopGenerating={handleStopGenerating}
-                activeMode="Build"
-                statusMessage={statusMessage}
-                isWritingFiles={isWritingFiles}
-                projectId={currentProjectId}
-                onImageEditStart={handleImageEditStart}
-                onImageEditSuccess={handleImageEditSuccess}
-                onImageEditError={handleImageEditError}
-              />
-            </div>
+        </div>
+      )}
 
-            {/* Right: Code & Preview Workspace */}
-            <div className="hidden lg:flex flex-1 flex-col h-full min-w-0 bg-surface">
-              {/* Workspace Tab Selector */}
-              <div className="h-11 border-b border-line bg-card px-4 flex items-center justify-between shrink-0">
-                <div className="flex rounded-xl bg-surface border border-line p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('preview')}
-                    className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
-                      activeTab === 'preview'
-                        ? 'bg-card text-ink shadow-xs border border-line/60 font-semibold'
-                        : 'text-muted hover:text-ink'
-                    }`}
-                  >
-                    <Eye size={14} className="text-[#0099FF]" />
-                    <span>Preview</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('code')}
-                    className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
-                      activeTab === 'code'
-                        ? 'bg-card text-ink shadow-xs border border-line/60 font-semibold'
-                        : 'text-muted hover:text-ink'
-                    }`}
-                  >
-                    <Code2 size={14} className="text-purple-500" />
-                    <span>Code</span>
-                  </button>
-                </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 lg:pl-[320px] h-screen overflow-hidden">
+        {/* Builder Top Bar */}
+        <BuilderTopBar
+          projectName={projectName}
+          onRenameProject={handleRename}
+          onOpenHistory={() => setIsHistoryOpen(true)}
+          onDownloadZip={() => downloadZip(files, projectName)}
+          onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+          canPreview={hasGeneratedCode}
+          isPreviewOpen={showWorkspace}
+          onOpenPreview={() => setShowWorkspace(true)}
+        />
 
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-[11px] text-muted font-mono">Sandbox Live</span>
-                </div>
-              </div>
-
-              {/* Workspace Content */}
-              <div className={activeTab === "preview" ? "h-full" : "hidden"}>
-                <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} onFixError={handleFixError} />
-              </div>
-              <div className={activeTab === "code" ? "h-full" : "hidden"}>
-                <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} />
-              </div>
-            </div>
+        {/* Main Area: chat only by default, chat + workspace after Preview */}
+        <div className={`flex-1 flex min-h-0 overflow-hidden relative ${showWorkspace ? "" : "bg-card"}`}>
+          {/* Chat column: centered by default, fixed 420px beside the workspace */}
+          <div
+            className={`h-full min-w-0 ${
+              showWorkspace
+                ? "hidden lg:block lg:w-[420px] shrink-0"
+                : "w-full max-w-4xl mx-auto"
+            }`}
+          >
+            <ChatPanel
+              messages={messages}
+              onClearChat={handleClearChat}
+              onSendMessage={handleSendMessage}
+              isGenerating={isGenerating}
+              onStopGenerating={handleStopGenerating}
+              activeMode="Build"
+              statusMessage={statusMessage}
+              isWritingFiles={isWritingFiles}
+              projectId={currentProjectId}
+              onImageEditStart={handleImageEditStart}
+              onImageEditSuccess={handleImageEditSuccess}
+              onImageEditError={handleImageEditError}
+              onDownloadZip={() => downloadZip(files, projectName)}
+            />
           </div>
-        )}
+
+          {/* Workspace: full-screen overlay on mobile, right column on desktop */}
+          {showWorkspace && (
+            <div className="fixed inset-0 z-50 bg-surface flex flex-col lg:static lg:flex-1 lg:z-auto lg:min-w-0">
+              {workspace}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Version History Drawer */}

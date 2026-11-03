@@ -15,6 +15,19 @@ const CODE_WORDS = /\b(website|web page|webpage|app|ui|html|code|component|scrip
 const FUNCTION_WORDS = /\b(function|method|snippet|regex|query|algorithm)\b/i;
 const BUILD_WORDS = /\b(website|app|page|project|ui|build|component)\b/i;
 
+// cheap keyword check: the user wants to GET a zip of the chat files
+const ZIP_WORD = /\bzip\b/i;
+const ZIP_VERBS = /\b(make|give|send|download|export|bana|banao|bana de|de|chahiye|nikal)\b/i;
+const ZIP_READ_WORDS = /\b(me se|se la|from the zip|inside|andar|extract|read|explain|kya|what)\b/i;
+const ZIP_BUILD_TARGETS = /\b(app|website|page|game|component)\b/i;
+
+// true when the message only asks to receive the files as a zip (shared by chat and build mode)
+export const isZipRequest = (text = "") =>
+  ZIP_WORD.test(text) &&
+  ZIP_VERBS.test(text) &&
+  !ZIP_READ_WORDS.test(text) &&
+  !(/\b(build|create|make|bana)\b/i.test(text) && ZIP_BUILD_TARGETS.test(text));
+
 // retry follow-ups like "try again" refer to the previous user message
 export const RETRY_PATTERN = /^\s*(?:try again|retry|again|dobara|phir se|once more)\s*[.!]?$/i;
 
@@ -37,7 +50,7 @@ export const imageRequestText = (message, history) =>
 // Decides if the user wants something built/changed (BUILD), a picture (IMAGE) or just to talk (CHAT).
 // A tiny separate call: simple one word answer, no tools, no special tags.
 // If it fails for any reason we fall back to CHAT (the user can still use the Build toggle).
-export const classifyIntent = async ({ history, content, hasFiles, signal }) => {
+export const classifyIntent = async ({ history, content, hasFiles, hasImages, signal }) => {
   const raw =
     typeof content === "string"
       ? content
@@ -51,10 +64,15 @@ export const classifyIntent = async ({ history, content, hasFiles, signal }) => 
     return { intent: "CHAT", tokens: 0 };
   }
 
+  // cheap keyword check: zip + a get verb, but not reading the zip and not building something new
+  if (isZipRequest(text)) {
+    return { intent: "ZIP", tokens: 0 };
+  }
+
   // cheap keyword check before the LLM call: image words + a make verb, no code words
-  // skipped when an image is attached (content array) so the LLM decides
+  // skipped when an image is attached so the LLM decides
   if (
-    !Array.isArray(content) &&
+    !hasImages &&
     IMAGE_WORDS.test(text) &&
     IMAGE_VERBS.test(text) &&
     !CODE_WORDS.test(text)
@@ -92,6 +110,7 @@ export const classifyIntent = async ({ history, content, hasFiles, signal }) => 
     let intent = "CHAT";
     if (/\bBUILD\b/.test(answer)) intent = "BUILD";
     else if (/\bIMAGE\b/.test(answer)) intent = "IMAGE";
+    else if (/\bZIP\b/.test(answer)) intent = "ZIP";
 
     return { intent, tokens: result.tokens };
   } catch (error) {

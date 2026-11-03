@@ -33,6 +33,7 @@ import RunStatus from "../components/RunStatus";
 import PromptGlow from "../components/PromptGlow";
 import Greeting from "../components/Greeting";
 import ChatImage from "../components/chat/ChatImage";
+import ZipCard from "../components/chat/ZipCard";
 
 // replaces the shimmer placeholder with the finished image message
 const pushImageMessage = (setMessages, image) => {
@@ -121,6 +122,7 @@ export default function Chat() {
 
     const allowed = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
     const next = [...attachments];
+    const newEntries = [];
 
     for (const file of selected) {
       if (next.length >= 3) {
@@ -135,14 +137,14 @@ export default function Chat() {
         toast.error(`${file.name}: only JPG, PNG, PDF and ZIP files are allowed`);
         continue;
       }
-      if (file.size > (isZip ? 20 : 5) * 1024 * 1024) {
-        toast.error(`${file.name} is larger than ${isZip ? "20 MB" : "5 MB"}`);
+      if (file.size > (isZip ? 50 : 5) * 1024 * 1024) {
+        toast.error(`${file.name} is larger than ${isZip ? "50 MB" : "5 MB"}`);
         continue;
       }
       if (isZip) {
-        next.push({ id: newId(), name: file.name, isZip: true, indexing: true, uploaded: null, zipFile: file });
+        newEntries.push({ id: newId(), name: file.name, isZip: true, indexing: true, uploaded: null, zipFile: file });
       } else {
-        next.push({
+        newEntries.push({
           id: newId(),
           file,
           name: file.name,
@@ -152,12 +154,12 @@ export default function Chat() {
         });
       }
     }
+    next.push(...newEntries);
 
     setAttachments(next);
 
-    // index zip files immediately, so they are ready when the user sends
-    next.forEach((entry) => {
-      // only index the zips added in this call
+    // index only the zips added in this call, so they are ready when the user sends
+    newEntries.forEach((entry) => {
       if (!entry.isZip || !entry.zipFile) return;
       uploadService
         .uploadFiles(user?.token, [entry.zipFile])
@@ -280,6 +282,12 @@ export default function Chat() {
             }
           } else if (event === "image") {
             pushImageMessage(setMessages, data);
+          } else if (event === "zip") {
+            // zip download card for the assistant reply
+            setMessages((prev) => [
+              ...prev,
+              { type: "assistant", text: "Here is your zip file.", zip: data },
+            ]);
           } else if (event === "file_start") {
             setIsWritingFiles(true);
           } else if (event === "token") {
@@ -418,6 +426,15 @@ export default function Chat() {
   const lastMessage = messages[messages.length - 1];
   const showStatus = isGenerating && (!lastMessage?.isStreaming || isWritingFiles);
   const label = isWritingFiles || /code|review/i.test(processingStatus) ? "Running a command" : "Thinking";
+
+  // only the last message with a zip shows the download card
+  let lastZipIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].zip) {
+      lastZipIndex = i;
+      break;
+    }
+  }
 
   return (
     <div className="h-screen bg-page text-ink flex overflow-hidden">
@@ -596,6 +613,17 @@ export default function Chat() {
                                 onEditError={handleImageEditError}
                               />
                             ))}
+                          </div>
+                        )}
+
+                        {/* Zip download card under the last assistant message with a zip */}
+                        {!isUser && index === lastZipIndex && msg.zip && (
+                          <div className="pl-12 mt-1">
+                            <ZipCard
+                              chatId={currentChatId}
+                              name={msg.zip.name}
+                              fileCount={msg.zip.fileCount}
+                            />
                           </div>
                         )}
 

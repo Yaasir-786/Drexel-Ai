@@ -1,4 +1,5 @@
 import Project, { PROJECT_LIMITS } from "../../models/projectModel.js";
+import { cleanupChatAssets } from "../../utils/assetCleanup.js";
 
 const getAllProjects = async (req, res) => {
   const projects = await Project.find({ user: req.user._id })
@@ -65,6 +66,9 @@ const deleteProject = async (req, res) => {
     res.status(404);
     throw new Error("Project Not Found...");
   }
+
+  // clean up cloudinary assets and indexed zips without blocking the response
+  cleanupChatAssets({ messages: project.messages || [] });
 
   res.status(200).json({ message: "Project Deleted SuccessFully..." });
 };

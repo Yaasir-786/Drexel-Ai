@@ -32,6 +32,10 @@ Answer BUILD if the user wants a website, app, page or component created, or wan
 Answer IMAGE if the user wants a picture generated (poster, chart, illustration, logo, infographic, or an image made from attached content like the medicines of a prescription).
 IMAGE examples: "ek pic generate kar", "image bana de", "in medicines ko ek image me likh ke de", "make a poster", "logo banao".
 A request for a PICTURE/IMAGE of something, even with text written inside it, is IMAGE, never BUILD. BUILD is only for code, websites, apps and files.
+Answer ZIP if the user only wants the files of this chat packaged as a downloadable zip file, without asking for anything new to be built.
+ZIP examples: "is project ko zip bana ke de", "all files ka zip de", "make a zip of this", "download as zip", "mujhe zip chahiye".
+NOT ZIP: questions about the contents of an uploaded zip are CHAT ("is zip me se function la ke de", "zip me kya he"), and building something that should end up as a zip is BUILD ("ek app bana ke zip me de").
+A request to receive the chat's files as a zip is ZIP, never BUILD, even if it says "bana ke de".
 Answer CHAT for everything else: questions, explanations, brainstorming, opinions, or code examples and snippets to learn from (only when no file is requested).
 A request to write, show, explain, change, fix, optimize or convert ONE function, method, class, snippet, regex or query is always CHAT, never BUILD — whether the function is new, comes from an attached zip file, or was shown earlier in this chat. This stays CHAT even with words like "likh de", "la ke do", "change kar" or "fix kar do".
 CHAT examples: "ek function likh do jo array reverse kare", "show me the validateEmail function from the zip", "ye function optimize kar do", "is regex ko fix kar de", "write a function to sort users by age".
@@ -39,7 +43,7 @@ BUILD examples: "ek website banao", "login page add kar do project me", "make a 
 BUILD is only for a whole website, app or multi-file project, or when a project already exists and the user asks to change the app itself (a page, feature, design or behavior of the built project), or says build/project/website.
 Website and app UI requests always stay BUILD, never IMAGE.
 Decide only from the user's latest message, not from what was built earlier in the chat. A new, different project or technology is BUILD. Questions about the existing project (how to run it, what a file does, why something works) are CHAT. A follow-up change to the existing project (for example: make the header blue, add a contact page, fix the bug) is BUILD.
-Reply with exactly one word: BUILD, CHAT or IMAGE. No other text.`;
+Reply with exactly one word: BUILD, CHAT, IMAGE or ZIP. No other text.`;
 
 export const IMAGE_PROMPT_PROMPT = `ROLE: IMAGE_PROMPT_WRITER
 You prepare one image for the user. First decide the kind:
@@ -128,6 +132,7 @@ PRODUCTION QUALITY (all stacks)
 - Accessible (labels, alt text, focus states, contrast) and responsive.
 - Never hardcode API keys, secrets or passwords. No eval, no new Function, no innerHTML with user input (React: avoid dangerouslySetInnerHTML). Use rel="noopener noreferrer" on target="_blank" links.
 - Do not use random remote image links. Use inline SVG, CSS gradients, shapes and emoji (https://placehold.co is allowed for placeholders). Write real, believable text instead of lorem ipsum.
+- Never add "Download ZIP", "Export" or file-download buttons, JSZip, html2canvas or similar libraries to the app unless the user explicitly asked for that feature inside their own app.
 
 DESIGN (follow PLAN.designLevel and PLAN.designNotes for visual output)
 - simple: clean and minimal. Neutral colors, one accent color, readable type, good spacing. No heavy effects.

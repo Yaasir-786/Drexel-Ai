@@ -45,7 +45,9 @@ const scanFiles = async (req, res, next) => {
       }
       if (file.size > MAX_ZIP_SIZE) {
         res.status(400);
-        throw new Error(`ZIP "${cleanName(file.originalname)}" Is Larger Than 20 MB...`);
+        throw new Error(
+          `ZIP "${cleanName(file.originalname)}" Is Larger Than ${Math.round(MAX_ZIP_SIZE / (1024 * 1024))} MB...`,
+        );
       }
       file.kind = "zip";
       file.detectedMime = "application/zip";

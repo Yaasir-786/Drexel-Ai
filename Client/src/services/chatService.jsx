@@ -21,6 +21,15 @@ const getChatById = async (token, id) => {
   return response.data;
 };
 
+// the zip of a chat comes back as a binary blob
+const downloadZip = async (token, id) => {
+  const response = await axios.get(`/api/chats/${id}/zip`, {
+    headers: { authorization: `Bearer ${token}` },
+    responseType: "blob",
+  });
+  return response.data;
+};
+
 const deleteChat = async (token, id) => {
   const response = await axios.delete(`/api/chats/${id}`, {
     headers: { authorization: `Bearer ${token}` },
@@ -32,6 +41,7 @@ const chatService = {
   getChats,
   createChat,
   getChatById,
+  downloadZip,
   deleteChat,
 };
 
