@@ -162,11 +162,12 @@ const downloadChatZip = async (req, res) => {
     // only the stored server-side url is fetched, never a client url
     if (document?.zipUrl) {
       try {
-        const response = await axios.get(document.zipUrl, {
-          responseType: "arraybuffer",
-          timeout: 30000,
+        const response = await fetch(document.zipUrl, {
+          signal: AbortSignal.timeout(30000),
         });
-        const original = new AdmZip(Buffer.from(response.data));
+        if (!response.ok) throw new Error(`status ${response.status}`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const original = new AdmZip(buffer);
         for (const entry of original.getEntries()) {
           if (!entry.isDirectory) {
             entries.set(entry.entryName, entry.getData());

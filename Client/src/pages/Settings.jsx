@@ -4,9 +4,6 @@ import {
   Sun,
   Moon,
   CheckCircle2,
-  User,
-  RotateCcw,
-  Palette,
 } from "lucide-react";
 import AppShell from "../components/layout/AppShell";
 import TextField from "../components/TextField";

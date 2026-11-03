@@ -9,7 +9,6 @@ import {
   FileCode2,
   FolderGit2,
   Download,
-  CheckCircle,
 } from 'lucide-react';
 import Logo from '../components/Logo';
 import ThemeToggle from '../components/ThemeToggle';

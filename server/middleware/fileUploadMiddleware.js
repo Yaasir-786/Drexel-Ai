@@ -14,7 +14,7 @@ const ALLOWED_MIME = [
 export const MAX_FILE_SIZE = 5 * 1024 * 1024;
 // zip upload limit comes from the environment (default 50 MB)
 export const MAX_ZIP_SIZE = (Number(process.env.MAX_ZIP_MB) || 50) * 1024 * 1024;
-export const MAX_FILES = 3;
+const MAX_FILES = 3;
 
 // files stay in memory (never written to disk), they go straight to Cloudinary
 const storage = multer.memoryStorage();

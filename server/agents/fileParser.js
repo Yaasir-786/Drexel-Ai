@@ -14,14 +14,14 @@ export const isSafePath = (path) =>
   !path.includes("//") &&
   !path.endsWith("/");
 
-export const normalizePath = (path) => {
+const normalizePath = (path) => {
   let clean = String(path).trim().replace(/\\/g, "/");
   if (!clean.startsWith("/")) clean = `/${clean}`;
   return clean;
 };
 
 // length of the longest ending of `buffer` that could be the start of `token`
-export const partialSuffixLen = (buffer, token) => {
+const partialSuffixLen = (buffer, token) => {
   const max = Math.min(buffer.length, token.length - 1);
   for (let n = max; n > 0; n--) {
     if (token.startsWith(buffer.slice(buffer.length - n))) return n;
@@ -30,7 +30,7 @@ export const partialSuffixLen = (buffer, token) => {
 };
 
 // removes the leading newline, trailing spaces and accidental ``` fences
-export const cleanFileContent = (raw) => {
+const cleanFileContent = (raw) => {
   let content = raw.replace(/^\r?\n/, "").replace(/\s+$/, "");
   const fenced = content.match(/^```[a-zA-Z0-9]*\r?\n([\s\S]*?)\r?\n?```$/);
   if (fenced) content = fenced[1];

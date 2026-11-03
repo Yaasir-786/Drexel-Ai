@@ -17,19 +17,27 @@ const BUILD_WORDS = /\b(website|app|page|project|ui|build|component)\b/i;
 
 // cheap keyword check: the user wants to GET a zip of the chat files
 const ZIP_WORD = /\bzip\b/i;
-const ZIP_VERBS = /\b(make|give|send|download|export|bana|banao|bana de|de|chahiye|nikal)\b/i;
-const ZIP_READ_WORDS = /\b(me se|se la|from the zip|inside|andar|extract|read|explain|kya|what)\b/i;
-const ZIP_BUILD_TARGETS = /\b(app|website|page|game|component)\b/i;
+const ZIP_GET = /\b(give|send|download|export|bana|banao|bana de|bhej|chahiye|nikal|make)\b|\bzip(?:\s+file)?\s+(?:de|do|dedo)\b/i;
+const ZIP_ABOUT = /\bzip(?:\s+file)?\s+(?:ka|ke|ki|me|mein|se)\b|\b(me se|se la|from the zip|inside|andar|extract|read|explain|kya|what|kitna|kaun|function|method|class|code|readme|bug|error|fix|size|naam|names?)\b|\b\w+\.(js|jsx|ts|tsx|json|py|html|css|md|txt)\b/i;
+const ZIP_OF = /\bzip\s+of\b|\b(ka|ki|ke)\s+zip\b/i;
 
 // true when the message only asks to receive the files as a zip (shared by chat and build mode)
-export const isZipRequest = (text = "") =>
-  ZIP_WORD.test(text) &&
-  ZIP_VERBS.test(text) &&
-  !ZIP_READ_WORDS.test(text) &&
-  !(/\b(build|create|make|bana)\b/i.test(text) && ZIP_BUILD_TARGETS.test(text));
+export const isZipRequest = (text = "") => {
+  const t = text || "";
+  return (
+    ZIP_WORD.test(t) &&
+    ZIP_GET.test(t) &&
+    !ZIP_ABOUT.test(t) &&
+    !(
+      /\b(build|create|make|bana|banao)\b/i.test(t) &&
+      /\b(app|website|page|game|component)\b/i.test(t) &&
+      !ZIP_OF.test(t)
+    )
+  );
+};
 
 // retry follow-ups like "try again" refer to the previous user message
-export const RETRY_PATTERN = /^\s*(?:try again|retry|again|dobara|phir se|once more)\s*[.!]?$/i;
+const RETRY_PATTERN = /^\s*(?:try again|retry|again|dobara|phir se|once more)\s*[.!]?$/i;
 
 // text of the last user message in the history (plain text only)
 export const lastUserText = (history = []) => {
@@ -174,7 +182,7 @@ const asList = (value, max, length = 200) =>
         .slice(0, max)
     : [];
 
-export const normalizePlan = (raw, { hasFiles, fallback }) => {
+const normalizePlan = (raw, { hasFiles, fallback }) => {
   const plan = raw && typeof raw === "object" ? raw : {};
   const steps = asList(plan.steps, 12);
   const summary =

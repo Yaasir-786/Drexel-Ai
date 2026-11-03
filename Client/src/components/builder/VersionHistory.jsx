@@ -1,6 +1,6 @@
 // VersionHistory drawer (400px right) displaying previous checkpoints and restore modal
 import React, { useState } from 'react';
-import { History, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import Drawer from '../Drawer';
 import Modal from '../Modal';
 import Button from '../Button';

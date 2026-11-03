@@ -54,7 +54,7 @@ export default function ChatPanel({
   // only the last message with a zip shows the download card
   let lastZipIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].zip) {
+    if (messages[i].zip?.name) {
       lastZipIndex = i;
       break;
     }
@@ -295,7 +295,7 @@ export default function ChatPanel({
                     )}
 
                     {/* Zip download card under the last assistant message with a zip */}
-                    {index === lastZipIndex && msg.zip && onDownloadZip && (
+                    {index === lastZipIndex && msg.zip?.name && onDownloadZip && (
                       <ZipCard
                         name={msg.zip.name}
                         fileCount={msg.zip.fileCount}

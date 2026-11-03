@@ -1,3 +1,5 @@
+import { MAX_ZIP_SIZE } from "./fileUploadMiddleware.js";
+
 const notFound = (req, res) => {
   res.status(404).json({ message: "Route Not Found..." });
 };
@@ -12,7 +14,7 @@ const errorHandler = (err, req, res, next) => {
     statusCode = 400;
     message =
       err.code === "LIMIT_FILE_SIZE"
-        ? "File Is Too Large (Max 50 MB for ZIP, 5 MB for others)..."
+        ? `File Is Too Large (Max ${Math.round(MAX_ZIP_SIZE / (1024 * 1024))} MB for ZIP, 5 MB for others)...`
         : err.code === "LIMIT_FILE_COUNT" || err.code === "LIMIT_UNEXPECTED_FILE"
           ? "Too Many Files (Max 3)..."
           : err.message;

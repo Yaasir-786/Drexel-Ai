@@ -430,7 +430,7 @@ export default function Chat() {
   // only the last message with a zip shows the download card
   let lastZipIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].zip) {
+    if (messages[i].zip?.name) {
       lastZipIndex = i;
       break;
     }
@@ -508,7 +508,7 @@ export default function Chat() {
               <Link
                 to="/settings"
                 className="w-9 h-9 rounded-xl bg-primary-gradient flex items-center justify-center text-white text-xs font-bold select-none shadow-sm cursor-pointer"
-                title={user?.name || "Jane Doe"}>
+                title={user?.name || ""}>
                 {user?.name?.slice(0, 2).toUpperCase()}
               </Link>
             </div>
@@ -617,7 +617,7 @@ export default function Chat() {
                         )}
 
                         {/* Zip download card under the last assistant message with a zip */}
-                        {!isUser && index === lastZipIndex && msg.zip && (
+                        {!isUser && index === lastZipIndex && msg.zip?.name && (
                           <div className="pl-12 mt-1">
                             <ZipCard
                               chatId={currentChatId}
