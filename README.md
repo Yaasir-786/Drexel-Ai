@@ -316,7 +316,7 @@ CLOUDINARY_API_SECRET=your_api_secret
 # Images (Cloudflare Workers AI) + zip upload limit
 CF_ACCOUNT_ID=your_cloudflare_account_id
 CF_API_TOKEN=your_cloudflare_api_token
-IMAGE_MODEL=@cf/black-forest-labs/flux-1-schnell
+IMAGE_MODEL=your_image_model
 MAX_ZIP_MB=50
 ```
 
