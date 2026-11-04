@@ -355,6 +355,10 @@ const streamAgent = async (req, res) => {
 
     // cheap keyword check: the user just wants a zip of the files (works in chat and build mode)
     const zipRequest = isZipRequest(message);
+    // does the user also want a zip handover after a build?
+    const wantsZipAfterBuild =
+      /\bzip\b/i.test(message) &&
+      !/\b(me se|se la|from the zip|inside|andar|extract|read|explain|kya|what)\b/i.test(message);
 
     let goBuild = !zipRequest && (mode === "build" || type === "fix");
 
@@ -365,11 +369,21 @@ const streamAgent = async (req, res) => {
       // ---------- CHAT: Planner Agent answers (or detects that the user wants a build) ----------
       send("status", { agent: "planner", message: "Planner is thinking..." });
 
+      // the last uploaded zip in the messages also counts as something to package
+      let hasZipUpload = false;
+      for (const item of convo.messages || []) {
+        if ((item.attachments || []).some((file) => file.type === "zip")) {
+          hasZipUpload = true;
+          break;
+        }
+      }
+
       const intent = await classifyIntent({
         history,
         // the plain message only: userContent already contains the zip/PDF text
         content: message,
         hasFiles: currentFiles.length > 0,
+        hasZip: hasZipUpload,
         hasImages,
         signal,
       });
@@ -619,6 +633,15 @@ const streamAgent = async (req, res) => {
             }
 
             changedFiles = paths;
+
+            // when the user asked for a zip with the build, hand the files over right away
+            if (wantsZipAfterBuild) {
+              const name = convo.title || convo.name || "files";
+              const zipData = { name, fileCount: files.length };
+              const lastRecord = records[records.length - 1];
+              if (lastRecord) lastRecord.zip = zipData;
+              send("zip", zipData);
+            }
           }
         }
       }

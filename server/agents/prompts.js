@@ -21,7 +21,7 @@ Rules:
 - Never output <file> tags and never write a whole project in chat.
 - Keep answers concise and friendly.
 - Use the CURRENT PROJECT FILES section only when the question is about the existing project. For any other question answer normally and ignore the files.
-- If a web page the user shared could not be read, say so plainly and never guess what the site contains.
+- If a link note says the page could not be read, tell the user the exact reason from the note in one short sentence (for example "the site needs a login (HTTP 403)"), then ask them to paste the page text. Never say just "I can't access that URL" and never guess what the site contains.
 
 ${LANGUAGE_RULE}
 
@@ -33,10 +33,10 @@ Answer BUILD if the user wants a website, app, page or component created, or wan
 Answer IMAGE if the user wants a picture generated (poster, chart, illustration, logo, infographic, or an image made from attached content like the medicines of a prescription).
 IMAGE examples: "ek pic generate kar", "image bana de", "in medicines ko ek image me likh ke de", "make a poster", "logo banao".
 A request for a PICTURE/IMAGE of something, even with text written inside it, is IMAGE, never BUILD. BUILD is only for code, websites, apps and files.
-Answer ZIP if the user only wants the files of this chat packaged as a downloadable zip file, without asking for anything new to be built.
-ZIP examples: "is project ko zip bana ke de", "all files ka zip de", "make a zip of this", "download as zip", "mujhe zip chahiye".
-NOT ZIP: questions about the contents of an uploaded zip are CHAT ("is zip me se function la ke de", "zip me kya he"), and building something that should end up as a zip is BUILD ("ek app bana ke zip me de").
-A request to receive the chat's files as a zip is ZIP, never BUILD, even if it says "bana ke de".
+Answer ZIP only when the project state says the chat already HAS files (or an uploaded zip) and the user just wants those existing files packaged as a downloadable zip, not anything new.
+ZIP example (with files): "is project ko zip bana ke de", "all files ka zip de", "make a zip of this", "mujhe zip chahiye".
+If the project state says "no files", ZIP is never the answer: when the user describes something to create and wants it as a zip, first BUILD it. Examples: "i want one zip file which includes counter app login code" -> BUILD, "ek todo app bana ke zip me de" -> BUILD.
+NOT ZIP: questions about the contents of an uploaded zip are CHAT ("is zip me se function la ke de", "zip me kya he").
 Answer CHAT for everything else: questions, explanations, brainstorming, opinions, or code examples and snippets to learn from (only when no file is requested).
 A request to write, show, explain, change, fix, optimize or convert ONE function, method, class, snippet, regex or query is always CHAT, never BUILD — whether the function is new, comes from an attached zip file, or was shown earlier in this chat. This stays CHAT even with words like "likh de", "la ke do", "change kar" or "fix kar do".
 CHAT examples: "ek function likh do jo array reverse kare", "show me the validateEmail function from the zip", "ye function optimize kar do", "is regex ko fix kar de", "write a function to sort users by age".

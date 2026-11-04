@@ -55,10 +55,21 @@ export const lastUserText = (history = []) => {
 export const imageRequestText = (message, history) =>
   RETRY_PATTERN.test(message || "") ? lastUserText(history) || message : message;
 
+// filler words that carry no real request, used to spot "empty" zip requests
+const ZIP_FILLER_WORDS = new Set([
+  "i", "want", "need", "one", "a", "an", "the", "zip", "file", "files",
+  "give", "me", "send", "please", "make", "chahiye", "de", "do", "dedo",
+  "bana", "banao", "ke", "ka", "ki", "ko", "mujhe", "ek", "bhej",
+  "download", "is", "this", "chat", "project", "all", "sab", "my",
+  "of", "in", "them", "it", "which",
+]);
+
 // Decides if the user wants something built/changed (BUILD), a picture (IMAGE) or just to talk (CHAT).
 // A tiny separate call: simple one word answer, no tools, no special tags.
 // If it fails for any reason we fall back to CHAT (the user can still use the Build toggle).
-export const classifyIntent = async ({ history, content, hasFiles, hasImages, signal }) => {
+export const classifyIntent = async ({ history, content, hasFiles, hasZip, hasImages, signal }) => {
+  // an uploaded zip in the chat also counts as something that can be packaged
+  hasFiles = hasFiles || hasZip;
   const raw =
     typeof content === "string"
       ? content
@@ -92,7 +103,7 @@ export const classifyIntent = async ({ history, content, hasFiles, hasImages, si
     {
       role: "system",
       // the project state helps the model decide between chat and build
-      content: `${INTENT_PROMPT}\n\nPROJECT STATE: ${hasFiles ? "has files" : "no files"}`,
+      content: `${INTENT_PROMPT}\n\nPROJECT STATE: ${hasFiles ? "has files (or an uploaded zip)" : "no files"}`,
     },
     ...history.slice(-2).map((message) => ({
       role: message.role,
@@ -119,6 +130,16 @@ export const classifyIntent = async ({ history, content, hasFiles, hasImages, si
     if (/\bBUILD\b/.test(answer)) intent = "BUILD";
     else if (/\bIMAGE\b/.test(answer)) intent = "IMAGE";
     else if (/\bZIP\b/.test(answer)) intent = "ZIP";
+
+    // ZIP needs something to package: an "app described as a zip" means BUILD it first
+    if (intent === "ZIP" && !hasFiles) {
+      const words = (content || "")
+        .toLowerCase()
+        .split(/[^a-z]+/)
+        .filter((word) => word && !ZIP_FILLER_WORDS.has(word))
+        .filter((word) => word.length >= 3);
+      if (words.length >= 3) intent = "BUILD";
+    }
 
     return { intent, tokens: result.tokens };
   } catch (error) {

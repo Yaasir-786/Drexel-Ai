@@ -70,10 +70,47 @@ const isBlockedIp = (ip) => {
 const safeLookup = (hostname, options, callback) => {
   dns.lookup(hostname, { ...options, all: true }, (error, addresses) => {
     if (error) return callback(error);
-    const allowed = addresses.find((address) => !isBlockedIp(address.address));
-    if (!allowed) return callback(new Error("blocked address"));
-    callback(null, allowed.address, allowed.family);
+
+    // validate EVERY address the domain resolves to
+    const allowed = addresses.filter((address) => !isBlockedIp(address.address));
+    if (allowed.length === 0) return callback(new Error("blocked address"));
+
+    // Node 20+ http core passes all:true and expects the array of results back
+    if (options.all) return callback(null, allowed);
+
+    callback(null, allowed[0].address, allowed[0].family);
   });
+};
+
+// short plain-language reason for a failed link fetch
+const failureReason = (error) => {
+  if (error.status) {
+    if (error.status === 401 || error.status === 403) {
+      return `the site needs a login (HTTP ${error.status})`;
+    }
+    if (error.status === 404) return "page not found (HTTP 404)";
+    if (error.status >= 500) return `server error (HTTP ${error.status})`;
+    return `HTTP ${error.status}`;
+  }
+
+  const code = error.code || "";
+  if (/blocked/i.test(error.message)) return "the address is private/blocked";
+  if (["ENOTFOUND", "EAI_AGAIN", "ENODATA"].includes(code)) return "domain not found";
+  if (["ETIMEDOUT", "ECONNABORTED"].includes(code) || /timeout/i.test(error.message)) {
+    return "timed out";
+  }
+  if (["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH"].includes(code)) {
+    return "the site refused the connection";
+  }
+  if (
+    ["EPROTO", "ERR_TLS_CERT_ALTNAME_INVALID", "CERT_HAS_EXPIRED"].includes(code) ||
+    /cert|tls|ssl/i.test(error.message)
+  ) {
+    return "secure connection failed";
+  }
+  if (error.message === "too many redirects") return "too many redirects";
+  if (error.message === "invalid url") return "invalid link";
+  return String(error.message || code || "unknown error").slice(0, 60);
 };
 
 // hostname checks that no redirect hop may escape
@@ -107,6 +144,7 @@ const fetchBody = (url, redirectsLeft, deadline) =>
       url,
       {
         lookup: safeLookup,
+        autoSelectFamily: false,
         timeout: remaining,
         headers: {
           "User-Agent": USER_AGENT,
@@ -123,6 +161,14 @@ const fetchBody = (url, redirectsLeft, deadline) =>
           if (redirectsLeft <= 0) return reject(new Error("too many redirects"));
           const next = new URL(response.headers.location, url).toString();
           return fetchBody(next, redirectsLeft - 1, deadline).then(resolve, reject);
+        }
+
+        // HTTP errors become readable failures with the real status attached
+        if (response.statusCode >= 400) {
+          response.resume();
+          const statusError = new Error(`HTTP ${response.statusCode}`);
+          statusError.status = response.statusCode;
+          return reject(statusError);
         }
 
         // only readable text types are processed
@@ -212,9 +258,22 @@ const extractText = (html) => {
 export const fetchPageText = async (url) => {
   try {
     const body = await fetchBody(url, MAX_REDIRECTS, Date.now() + TOTAL_TIMEOUT);
-    return extractText(body);
+
+    // the short notes from fetchBody count as failures on the server log too
+    if (body.startsWith("[not a web page:")) {
+      console.log(`LINK READ FAILED ${url} -> ${body.slice(1, -1)}`);
+      return body;
+    }
+
+    const text = extractText(body);
+    if (text === "[The page has little text, it may need JavaScript]") {
+      console.log(`LINK READ FAILED ${url} -> page has little text, it may need JavaScript`);
+      return text;
+    }
+    return text;
   } catch (error) {
-    const reason = String(error?.message || "unknown error").slice(0, 60);
+    const reason = failureReason(error);
+    console.log(`LINK READ FAILED ${url} -> ${reason}`);
     return `[Could not read the link: ${reason}]`;
   }
 };
