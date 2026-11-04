@@ -1,8 +1,9 @@
-// linkReader: reads the text of website links in a user message (node built-ins only)
+// linkReader: reads the text of website links in a user message (node built-ins only for the fetching)
 import https from "node:https";
 import http from "node:http";
 import dns from "node:dns";
 import net from "node:net";
+import { isAbortError } from "./llmClient.js";
 
 const MAX_LINKS = 2;
 const MAX_REDIRECTS = 3;
@@ -11,8 +12,13 @@ const MAX_BYTES = 1.5 * 1024 * 1024;
 const MAX_TEXT = 6000;
 const USER_AGENT = "DrexelAI-LinkReader/1.0";
 
-// http(s) links and www. domains, max 2
+// http(s) links and www. domains, max 2 (links inside code are ignored)
 export const extractUrls = (message = "") => {
+  // pasted code often contains api or localhost links -> skip code blocks and inline code
+  const outsideCode = String(message)
+    .replace(/```[\s\S]*?(```|$)/g, " ")
+    .replace(/`[^`\n]*`/g, " ");
+
   const urls = [];
   const seen = new Set();
   const patterns = [
@@ -21,7 +27,7 @@ export const extractUrls = (message = "") => {
   ];
 
   for (const pattern of patterns) {
-    for (const match of String(message).matchAll(pattern)) {
+    for (const match of outsideCode.matchAll(pattern)) {
       // trailing punctuation is not part of the link
       let url = match[0].replace(/[.,;:!?)\]]+$/, "");
       if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
@@ -38,33 +44,19 @@ export const extractUrls = (message = "") => {
 };
 
 // private and special IP ranges that must never be fetched (SSRF guard)
-const isBlockedIp = (ip) => {
-  if (net.isIPv4(ip)) {
-    const [a, b, c] = ip.split(".").map(Number);
-    if (a === 0 || a === 10 || a === 127) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true;
-    if (a === 192 && b === 0 && c === 0) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 198 && (b === 18 || b === 19)) return true;
-    if (a >= 224) return true;
-    return false;
-  }
+const blockedRanges = new net.BlockList();
+for (const [ip, prefix] of [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8],
+  ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24],
+  ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3],
+]) blockedRanges.addSubnet(ip, prefix, "ipv4");
+blockedRanges.addAddress("::", "ipv6");
+blockedRanges.addAddress("::1", "ipv6");
+blockedRanges.addSubnet("fc00::", 7, "ipv6");
+blockedRanges.addSubnet("fe80::", 10, "ipv6");
+blockedRanges.addSubnet("ff00::", 8, "ipv6");
 
-  const lower = String(ip).toLowerCase();
-  if (lower === "::" || lower === "::1") return true;
-
-  // IPv4-mapped addresses are checked as IPv4
-  const mapped = lower.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
-  if (mapped) return isBlockedIp(mapped[1]);
-
-  const first = parseInt(lower.split(":")[0].replace(/^0+/, ""), 16) || 0;
-  if ((first & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
-  if ((first & 0xffc0) === 0xfe80) return true; // fe80::/10 link local
-  if ((first & 0xff00) === 0xff00) return true; // ff00::/8 multicast
-  return false;
-};
+const isBlockedIp = (ip) => blockedRanges.check(ip, net.isIPv6(ip) ? "ipv6" : "ipv4");
 
 // dns lookup that refuses private addresses before any connection is made
 const safeLookup = (hostname, options, callback) => {
@@ -94,6 +86,7 @@ const failureReason = (error) => {
   }
 
   const code = error.code || "";
+  if (/abort/i.test(error.message) || code === "ABORT_ERR") return "stopped";
   if (/blocked/i.test(error.message)) return "the address is private/blocked";
   if (["ENOTFOUND", "EAI_AGAIN", "ENODATA"].includes(code)) return "domain not found";
   if (["ETIMEDOUT", "ECONNABORTED"].includes(code) || /timeout/i.test(error.message)) {
@@ -122,11 +115,14 @@ const isAllowedHost = (parsedUrl) => {
   if (/(^|\.)localhost$|\.local$|\.internal$/i.test(parsedUrl.hostname)) {
     return false;
   }
+  // an IP-literal hostname skips the DNS lookup, so check it directly
+  const host = parsedUrl.hostname.replace(/^\[|\]$/g, "");
+  if (net.isIP(host) && isBlockedIp(host)) return false;
   return true;
 };
 
 // one request with SSRF guards, manual redirects and hard limits
-const fetchBody = (url, redirectsLeft, deadline) =>
+const fetchBody = (url, redirectsLeft, deadline, signal) =>
   new Promise((resolve, reject) => {
     let parsed;
     try {
@@ -146,6 +142,8 @@ const fetchBody = (url, redirectsLeft, deadline) =>
         lookup: safeLookup,
         autoSelectFamily: false,
         timeout: remaining,
+        // the user's stop button aborts the request
+        signal,
         headers: {
           "User-Agent": USER_AGENT,
           Accept: "text/html, text/plain, application/xhtml+xml, */*;q=0.5",
@@ -160,7 +158,7 @@ const fetchBody = (url, redirectsLeft, deadline) =>
           response.resume();
           if (redirectsLeft <= 0) return reject(new Error("too many redirects"));
           const next = new URL(response.headers.location, url).toString();
-          return fetchBody(next, redirectsLeft - 1, deadline).then(resolve, reject);
+          return fetchBody(next, redirectsLeft - 1, deadline, signal).then(resolve, reject);
         }
 
         // HTTP errors become readable failures with the real status attached
@@ -255,9 +253,11 @@ const extractText = (html) => {
 };
 
 // public entry: the readable text of one url, never throws
-export const fetchPageText = async (url) => {
+// the optional signal destroys the request when the user presses stop
+export const fetchPageText = async (url, signal) => {
   try {
-    const body = await fetchBody(url, MAX_REDIRECTS, Date.now() + TOTAL_TIMEOUT);
+    if (signal?.aborted) throw new Error("aborted");
+    const body = await fetchBody(url, MAX_REDIRECTS, Date.now() + TOTAL_TIMEOUT, signal);
 
     // the short notes from fetchBody count as failures on the server log too
     if (body.startsWith("[not a web page:")) {
@@ -272,6 +272,8 @@ export const fetchPageText = async (url) => {
     }
     return text;
   } catch (error) {
+    // a user stop is not a failure: finish quietly
+    if (isAbortError(error, signal)) return "[Could not read the link]";
     const reason = failureReason(error);
     console.log(`LINK READ FAILED ${url} -> ${reason}`);
     return `[Could not read the link: ${reason}]`;

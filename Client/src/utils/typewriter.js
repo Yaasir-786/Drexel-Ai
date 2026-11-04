@@ -7,7 +7,8 @@ export const createTypewriter = (onText) => {
       timer = null;
       return;
     }
-    const size = Math.max(2, Math.ceil(queue.length / 100));
+    // catch up faster, so the typewriter never lags far behind the saved text
+    const size = Math.max(4, Math.ceil(queue.length / 25));
     onText(queue.slice(0, size));
     queue = queue.slice(size);
   };

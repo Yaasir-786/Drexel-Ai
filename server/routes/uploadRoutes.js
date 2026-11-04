@@ -15,6 +15,5 @@ router.post(
   scanFiles,
   uploadController.uploadFiles,
 );
-router.delete("/:publicId", protect.forUser, uploadController.deleteFile);
 
 export default router;

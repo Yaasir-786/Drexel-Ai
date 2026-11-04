@@ -34,6 +34,7 @@ import PromptGlow from "../components/PromptGlow";
 import Greeting from "../components/Greeting";
 import ChatImage from "../components/chat/ChatImage";
 import ZipCard from "../components/chat/ZipCard";
+import UserMessage from "../components/chat/UserMessage";
 
 // replaces the shimmer placeholder with the finished image message
 const pushImageMessage = (setMessages, image) => {
@@ -80,6 +81,9 @@ export default function Chat() {
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const controllerRef = useRef(null);
+  const typerRef = useRef(null);
+  const requestIdRef = useRef(null);
+  const shownLengthRef = useRef(0);
 
   // Load chat history if id exists
   const { data: chatData } = useQuery({
@@ -105,10 +109,14 @@ export default function Chat() {
       setArtifactPanelOpen(false);
       setArtifactChatId(null);
     }
+  }, [id, chatData]);
+
+  // abort a running stream only when the chat actually changes
+  useEffect(() => {
     return () => {
       controllerRef.current?.abort();
     };
-  }, [id, chatData]);
+  }, [id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
@@ -200,7 +208,13 @@ export default function Chat() {
     setMessages((prev) => prev.filter((m) => m.type !== "image-loading"));
   };
 
-  const runStream = async ({ message, type = "prompt", errorLog = "", attachments = [] }) => {
+  const runStream = async ({
+    message,
+    type = "prompt",
+    errorLog = "",
+    attachments = [],
+    replaceFromMessageId = null,
+  }) => {
     if (
       (!message?.trim() && type !== "fix" && attachments.length === 0) ||
       isGenerating
@@ -225,15 +239,22 @@ export default function Chat() {
       const userMessage = {
         type: "user",
         text: type === "fix" ? "Fix preview error" : message,
+        createdAt: Date.now(),
+        // keep everything the re-run of an edited message needs (publicId etc.)
         attachments: attachments.map((file) => ({
           url: file.url,
+          publicId: file.publicId,
+          documentId: file.documentId,
           name: file.name,
           type: file.type,
+          text: file.text,
         })),
       };
       setMessages((prev) => [...prev, userMessage]);
 
       typer = createTypewriter((chunk) => {
+        // count what the user has actually seen (used when stopping)
+        shownLengthRef.current += chunk.length;
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           if (last && last.type === "assistant" && last.isStreaming) {
@@ -248,9 +269,14 @@ export default function Chat() {
           ];
         });
       });
+      typerRef.current = typer;
 
       const controller = new AbortController();
       controllerRef.current = controller;
+      // the stop route on the server aborts this request id
+      const requestId = crypto.randomUUID();
+      requestIdRef.current = requestId;
+      shownLengthRef.current = 0;
       setIsGenerating(true);
       setProcessingStatus("Thinking…");
 
@@ -265,6 +291,8 @@ export default function Chat() {
           type,
           errorLog,
           attachments,
+          requestId,
+          ...(replaceFromMessageId && { replaceFromMessageId }),
         },
         signal: controller.signal,
         onEvent: (event, data) => {
@@ -322,6 +350,17 @@ export default function Chat() {
 
       await typer.drain();
 
+      // the just-sent message became savable: give it the server id so Edit works
+      if (doneData?.userMessageId) {
+        setMessages((prev) => {
+          const index = prev.findLastIndex((m) => m.type === "user" && !m.id);
+          if (index === -1) return prev;
+          return prev.map((m, i) =>
+            i === index ? { ...m, id: doneData.userMessageId } : m,
+          );
+        });
+      }
+
       // remove a leftover image placeholder (aborted generation)
       setMessages((prev) => prev.filter((m) => m.type !== "image-loading"));
 
@@ -353,9 +392,12 @@ export default function Chat() {
         toast.error(error.message || "Something went wrong");
       }
     } finally {
+      typerRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["usage"] });
       setIsGenerating(false);
       setIsWritingFiles(false);
+      // remove a leftover image placeholder (stop or error paths)
+      setMessages((prev) => prev.filter((m) => m.type !== "image-loading"));
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.isStreaming) {
@@ -363,6 +405,50 @@ export default function Chat() {
         }
         return prev;
       });
+    }
+  };
+
+  // Stop button: ask the server to abort + trim, then stop everything locally too
+  const handleStop = () => {
+    agentService.stopAgent(user?.token, {
+      requestId: requestIdRef.current,
+      shownLength: shownLengthRef.current,
+    });
+    controllerRef.current?.abort();
+    typerRef.current?.stop();
+    setIsGenerating(false);
+    setIsWritingFiles(false);
+    // remove the image shimmer and end the streaming state
+    setMessages((prev) => {
+      const filtered = prev.filter((m) => m.type !== "image-loading");
+      const last = filtered[filtered.length - 1];
+      if (last && last.isStreaming) {
+        return [...filtered.slice(0, -1), { ...last, isStreaming: false }];
+      }
+      return filtered;
+    });
+  };
+
+  // Edit-save: remove the old message and its output, then re-run the command
+  const handleEditSave = async (messageId, newText) => {
+    if (isGenerating) return;
+    const index = messages.findIndex((m) => m.id === messageId);
+    if (index === -1) return;
+    const edited = messages[index];
+
+    // drop the old message and its output; the run re-adds the edited command
+    setMessages((prev) => prev.slice(0, index));
+
+    await runStream({
+      message: newText,
+      type: "prompt",
+      attachments: edited.attachments || [],
+      replaceFromMessageId: messageId,
+    });
+
+    // refetch so the screen always matches the database (also after errors)
+    if (currentChatId) {
+      await queryClient.invalidateQueries({ queryKey: ["chat", currentChatId] });
     }
   };
 
@@ -549,59 +635,41 @@ export default function Chat() {
                       );
                     }
 
+                    // never render an empty assistant bubble
+                    if (
+                      !isUser &&
+                      !(msg.text || "").trim() &&
+                      (msg.images || []).length === 0 &&
+                      (msg.files || []).length === 0 &&
+                      !msg.zip
+                    ) {
+                      return null;
+                    }
+
+                    // user message with hover actions: time ago, Edit, Copy
+                    if (isUser) {
+                      return (
+                        <UserMessage
+                          key={index}
+                          msg={msg}
+                          isGenerating={isGenerating}
+                          onSave={(newText) => handleEditSave(msg.id, newText)}
+                        />
+                      );
+                    }
+
                     return (
-                      <div
-                        key={index}
-                        className={`flex flex-col ${
-                          isUser ? "items-end" : "items-start"
-                        }`}>
-                        <div
-                          className={`flex gap-3.5 ${
-                            isUser ? "flex-row-reverse self-end max-w-[85%]" : "self-start max-w-[95%]"
-                          }`}>
-                          {!isUser && (
-                            <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
-                          )}
+                      <div key={index} className="flex flex-col items-start">
+                        <div className="flex gap-3.5 self-start max-w-[95%]">
+                          <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
 
-                          <div
-                            className={`${
-                              isUser
-                                ? "font-serif rounded-2xl p-4 text-base shadow-xs bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white whitespace-pre-wrap"
-                                : "min-w-0 pt-1 font-serif text-base text-ink leading-relaxed"
-                            }`}>
-                            {isUser && msg.attachments?.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mb-2 pb-2 border-b border-white/20">
-                                {msg.attachments.map((att, i) => (
-                                  <span
-                                    key={i}
-                                    className="inline-flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded text-[10px] text-white font-medium">
-                                    {att.type === "image" ? (
-                                      <img
-                                        src={att.url}
-                                        alt={att.name}
-                                        className="w-4 h-4 rounded object-cover shrink-0"
-                                      />
-                                    ) : att.type === "zip" ? (
-                                      <FileArchive size={10} />
-                                    ) : (
-                                      <Paperclip size={10} />
-                                    )}
-                                    {att.name}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-
-                            {isUser ? (
-                              msg.text
-                            ) : (
-                              <ChatMessageContent content={msg.text || ""} />
-                            )}
+                          <div className="min-w-0 pt-1 font-serif text-base text-ink leading-relaxed">
+                            <ChatMessageContent content={msg.text || ""} />
                           </div>
                         </div>
 
                         {/* Generated images under the assistant text */}
-                        {!isUser && msg.images?.length > 0 && (
+                        {msg.images?.length > 0 && (
                           <div className="pl-12 mt-1 flex flex-col gap-2">
                             {msg.images.map((img, i) => (
                               <ChatImage
@@ -751,7 +819,7 @@ export default function Chat() {
                 {isGenerating ? (
                   <Button
                     variant="danger"
-                    onClick={() => controllerRef.current?.abort()}
+                    onClick={handleStop}
                     className="h-9! px-3 text-xs"
                     icon={Square}>
                     Stop

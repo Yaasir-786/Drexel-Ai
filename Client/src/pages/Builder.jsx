@@ -57,6 +57,9 @@ export default function Builder() {
   // Tab state: [preview | code]
   const [activeTab, setActiveTab] = useState('preview');
   const controllerRef = useRef(null);
+  const typerRef = useRef(null);
+  const requestIdRef = useRef(null);
+  const shownLengthRef = useRef(0);
 
   // Fetch project details if not "new"
   const { data: project } = useQuery({
@@ -117,7 +120,14 @@ export default function Builder() {
     }
   };
 
-  const handleSendMessage = async (text, mode, attachments = [], type = "prompt", errorLog = "") => {
+  const handleSendMessage = async (
+    text,
+    mode,
+    attachments = [],
+    type = "prompt",
+    errorLog = "",
+    replaceFromMessageId = null,
+  ) => {
     if ((!text?.trim() && type !== "fix" && attachments.length === 0) || isGenerating) return;
 
     let projectId = currentProjectId;
@@ -140,16 +150,22 @@ export default function Builder() {
         type: 'user',
         text: type === "fix" ? "Fix preview error" : text,
         mode,
+        createdAt: Date.now(),
+        // keep everything the re-run of an edited message needs (publicId etc.)
         attachments: attachments.map((file) => ({
           url: file.url,
+          publicId: file.publicId,
+          documentId: file.documentId,
           name: file.name,
           type: file.type,
+          text: file.text,
         })),
-        timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, userMsg]);
 
       typer = createTypewriter((chunk) => {
+        // count what the user has actually seen (used when stopping)
+        shownLengthRef.current += chunk.length;
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           if (last && last.type === "assistant" && last.isStreaming) {
@@ -164,6 +180,12 @@ export default function Builder() {
           ];
         });
       });
+      typerRef.current = typer;
+
+      // the stop route on the server aborts this request id
+      const requestId = crypto.randomUUID();
+      requestIdRef.current = requestId;
+      shownLengthRef.current = 0;
 
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -181,6 +203,8 @@ export default function Builder() {
           type,
           errorLog,
           attachments,
+          requestId,
+          ...(replaceFromMessageId && { replaceFromMessageId }),
         },
         signal: controller.signal,
         onEvent: (event, data) => {
@@ -224,6 +248,17 @@ export default function Builder() {
 
       await typer.drain();
 
+      // the just-sent message became savable: give it the server id so Edit works
+      if (doneData?.userMessageId) {
+        setMessages((prev) => {
+          const index = prev.findLastIndex((m) => m.type === 'user' && !m.id);
+          if (index === -1) return prev;
+          return prev.map((m, i) =>
+            i === index ? { ...m, id: doneData.userMessageId } : m,
+          );
+        });
+      }
+
       // remove a leftover image placeholder (aborted generation)
       setMessages((prev) => prev.filter((m) => m.type !== 'image-loading'));
 
@@ -256,9 +291,12 @@ export default function Builder() {
         toast.error(error.message || "Something went wrong");
       }
     } finally {
+      typerRef.current = null;
       queryClient.invalidateQueries({ queryKey: ["usage"] });
       setIsGenerating(false);
       setIsWritingFiles(false);
+      // remove a leftover image placeholder (stop or error paths)
+      setMessages((prev) => prev.filter((m) => m.type !== 'image-loading'));
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.isStreaming) {
@@ -269,8 +307,55 @@ export default function Builder() {
     }
   };
 
+  // Stop button: ask the server to abort + trim, then stop everything locally too
   const handleStopGenerating = () => {
+    agentService.stopAgent(user?.token, {
+      requestId: requestIdRef.current,
+      shownLength: shownLengthRef.current,
+    });
     controllerRef.current?.abort();
+    typerRef.current?.stop();
+    setIsGenerating(false);
+    setIsWritingFiles(false);
+    // remove the image shimmer and end the streaming state
+    setMessages((prev) => {
+      const filtered = prev.filter((m) => m.type !== 'image-loading');
+      const last = filtered[filtered.length - 1];
+      if (last && last.isStreaming) {
+        return [...filtered.slice(0, -1), { ...last, isStreaming: false }];
+      }
+      return filtered;
+    });
+  };
+
+  // Edit-save in the project chat: re-run the command after the old output is gone
+  const handleEditMessage = async (messageId, newText) => {
+    if (isGenerating) return;
+    const index = messages.findIndex((m) => m.id === messageId);
+    if (index === -1) return;
+    const edited = messages[index];
+
+    // drop the old message and its output; the run re-adds the edited command
+    setMessages((prev) => prev.slice(0, index));
+
+    try {
+      await handleSendMessage(
+        newText,
+        edited.mode || "Chat",
+        edited.attachments || [],
+        "prompt",
+        "",
+        messageId,
+      );
+    } catch {
+      // the run failed and saved nothing: the refetch below restores the screen
+    }
+
+    // refetch so the screen always matches the database (also after errors)
+    const targetId = currentProjectId || id;
+    if (targetId && targetId !== 'new') {
+      await queryClient.invalidateQueries({ queryKey: ["projectChat", targetId] });
+    }
   };
 
   // save the code-editor changes to the project (the next build reads them from the DB)
@@ -374,7 +459,7 @@ export default function Builder() {
         <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} onFixError={handleFixError} />
       </div>
       <div className={activeTab === "code" ? "h-full" : "hidden"}>
-        <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} onSave={handleSaveFiles} isSaving={isSaving || isGenerating} />
+        <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} onSave={handleSaveFiles} isSaving={isSaving} />
       </div>
     </>
   );
@@ -435,6 +520,7 @@ export default function Builder() {
               onImageEditSuccess={handleImageEditSuccess}
               onImageEditError={handleImageEditError}
               onDownloadZip={() => downloadZip(files, projectName)}
+              onEditMessage={handleEditMessage}
             />
           </div>
 

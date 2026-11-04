@@ -52,8 +52,26 @@ const streamAgent = async ({ token, body, signal, onEvent }) => {
   }
 };
 
+// ask the server to abort a stream and trim the saved text; never throws
+const stopAgent = async (token, { requestId, shownLength }) => {
+  try {
+    await fetch("/api/agent/stop", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ requestId, shownLength }),
+      keepalive: true,
+    });
+  } catch {
+    // the local controller abort below is the fallback
+  }
+};
+
 const agentService = {
   streamAgent,
+  stopAgent,
 };
 
 export default agentService;

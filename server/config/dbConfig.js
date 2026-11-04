@@ -15,7 +15,7 @@ const connectDb = async () => {
       console.log(`DOCUMENT INDEX SYNC FAILED... ${error.message}`);
     }
   } catch (error) {
-    console.log(`DB CONNECTION FAILED... ${error.message}`.bgRed);
+    console.log(`DB CONNECTION FAILED... ${error.message}`);
     process.exit(1);
   }
 };

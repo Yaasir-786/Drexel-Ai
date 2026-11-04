@@ -5,8 +5,8 @@ dns.setServers(["8.8.8.8", "8.8.4.4"]);
 import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
-import colors from "colors";
 import cors from "cors";
+import colors from "colors";
 import connectDb from "./config/dbConfig.js";
 
 import errorHandler, { notFound } from "./middleware/errorHandler.js";

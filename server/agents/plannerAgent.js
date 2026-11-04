@@ -169,14 +169,39 @@ export const runChatAgent = async ({
     { role: "user", content },
   ];
 
+  // chat replies answer fast: a lower reasoning effort keeps the hidden thinking short
+  // (builds keep the global LLM_REASONING_EFFORT)
+  const reasoningEffort = process.env.CHAT_REASONING_EFFORT || "low";
+
   const result = await streamChat({
     model: pickModel("planner", useVision),
     messages,
     maxTokens: limits().chat,
     temperature: 0.5,
+    reasoningEffort,
     signal,
     onDelta: onText,
   });
+
+  // empty reply (all budget went to hidden thinking): retry once with a bigger budget
+  if (!result.text.trim() && !result.aborted) {
+    const retryMax = Math.min(limits().chat * 2, 8000);
+    console.log(`EMPTY CHAT REPLY, retrying once with maxTokens=${retryMax}...`);
+    const retry = await streamChat({
+      model: pickModel("planner", useVision),
+      messages,
+      maxTokens: retryMax,
+      temperature: 0.5,
+      reasoningEffort,
+      signal,
+      onDelta: onText,
+    });
+    return {
+      text: retry.text,
+      tokens: result.tokens + retry.tokens,
+      aborted: retry.aborted,
+    };
+  }
 
   return { text: result.text, tokens: result.tokens, aborted: result.aborted };
 };

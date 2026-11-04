@@ -17,6 +17,14 @@ router.post(
   agentController.streamAgent,
 );
 
+// explicit stop: abort a running stream by requestId (no credit check needed)
+router.post(
+  "/stop",
+  protect.forUser,
+  validate(schemas.stopAgent),
+  agentController.stopAgent,
+);
+
 router.post(
   "/image-edit",
   protect.forUser,

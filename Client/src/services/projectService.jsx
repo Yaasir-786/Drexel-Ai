@@ -65,9 +65,21 @@ export const mapMessages = (messages = []) => {
     .filter(
       (m) => !(m.role === "assistant" && m.agent === "planner" && m.mode === "build")
     )
+    // never show an empty assistant bubble
+    .filter(
+      (m) =>
+        m.role === "user" ||
+        String(m.content || "").trim() ||
+        (m.images || []).length > 0 ||
+        (m.files || []).length > 0 ||
+        m.zip,
+    )
     .map((m) => ({
       type: m.role === "user" ? "user" : "assistant",
       mode: m.mode,
+      // saved message id + time, so Edit/Copy actions can work on it
+      id: m._id ? String(m._id) : undefined,
+      createdAt: m.createdAt,
       text: m.content,
       attachments: m.attachments,
       images: m.images || [],

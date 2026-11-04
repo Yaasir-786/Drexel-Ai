@@ -18,6 +18,7 @@ import PromptGlow from '../PromptGlow';
 import Greeting from '../Greeting';
 import ChatImage from '../chat/ChatImage';
 import ZipCard from '../chat/ZipCard';
+import UserMessage from '../chat/UserMessage';
 import uploadService from '../../services/uploadService';
 
 // unique id for attachment chips
@@ -37,6 +38,7 @@ export default function ChatPanel({
   onImageEditSuccess,
   onImageEditError,
   onDownloadZip,
+  onEditMessage,
 }) {
   const [inputText, setInputText] = useState('');
   const [mode, setMode] = useState(activeMode); // 'Chat' or 'Build'
@@ -229,40 +231,29 @@ export default function ChatPanel({
               );
             }
 
-            // User message bubble
+            // User message bubble with hover actions: time ago, Edit, Copy
             if (msg.type === 'user') {
               return (
-                <div
+                <UserMessage
                   key={index}
-                  className="self-end max-w-[85%] bg-[#0099FF] text-white rounded-2xl rounded-tr-xs px-4 py-2.5 font-serif text-sm shadow-xs"
-                >
-                  <p className="whitespace-pre-wrap">{msg.text}</p>
-                  {msg.attachments?.length > 0 && (
-                    <div className="mt-2 pt-1.5 border-t border-white/20 flex flex-wrap gap-1">
-                      {msg.attachments.map((att, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 text-[10px] bg-white/20 px-2 py-0.5 rounded-md">
-                          {att.type === 'image' ? (
-                            <img
-                              src={att.url}
-                              alt={att.name}
-                              className="w-4 h-4 rounded object-cover shrink-0"
-                            />
-                          ) : att.type === 'zip' ? (
-                            <FileArchive size={10} />
-                          ) : (
-                            <Paperclip size={10} />
-                          )}
-                          {att.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  msg={msg}
+                  variant="panel"
+                  isGenerating={isGenerating}
+                  onSave={(newText) => onEditMessage(msg.id, newText)}
+                />
               );
             }
 
             // Show final AI response directly in the conversation, just like Claude
             if (msg.type === 'assistant' || msg.type === 'coder') {
+              // never render an empty assistant bubble
+              const hasContent =
+                (msg.text || '').trim() ||
+                (msg.images || []).length > 0 ||
+                (msg.files || []).length > 0 ||
+                msg.zip;
+              if (!hasContent) return null;
+
               const responseText =
                 msg.text ||
                 (msg.summary

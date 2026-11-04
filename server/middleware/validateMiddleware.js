@@ -142,6 +142,10 @@ const schemas = {
       type: z.enum(["prompt", "fix"]).default("prompt"),
       attachments: z.array(attachmentField).max(3).default([]),
       errorLog: z.string().max(4000).optional(),
+      // explicit stop request id, mirrored in schemas.stopAgent
+      requestId: z.string().uuid().optional(),
+      // edit re-run: the saved user message whose tail is replaced
+      replaceFromMessageId: objectId.optional(),
     })
     .refine((data) => Boolean(data.projectId || data.chatId), {
       message: "projectId or chatId is required",
@@ -153,6 +157,15 @@ const schemas = {
           : data.message.length > 0 || data.attachments.length > 0,
       { message: "Message is required (or errorLog for type fix)" },
     ),
+
+  // stops a running agent stream created with the same requestId
+  stopAgent: z.object({
+    requestId: z.string().uuid(),
+    shownLength: z
+      .number({ invalid_type_error: "shownLength must be a number" })
+      .int()
+      .min(0),
+  }),
 
   adminCredits: z.object({
     action: z.enum(["add", "remove", "set"]),

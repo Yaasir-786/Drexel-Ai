@@ -3,15 +3,22 @@ import OpenAI from "openai";
 let client = null;
 
 // reasoning models (gpt-oss): "low" keeps the hidden thinking short
-const reasoningOption = () =>
-  process.env.LLM_REASONING_EFFORT
-    ? { reasoning_effort: process.env.LLM_REASONING_EFFORT }
+const reasoningOption = (effort) =>
+  (effort || process.env.LLM_REASONING_EFFORT)
+    ? { reasoning_effort: effort || process.env.LLM_REASONING_EFFORT }
     : {};
 
 // random provider-side hiccups of reasoning models, a second try usually works
 const isFlaky = (error) =>
   error?.status === 400 &&
   /called a tool|Parsing failed/i.test(error?.message || "");
+
+// a user stop is not an error: aborted requests must log nothing
+export const isAbortError = (error, signal) =>
+  error?.name === "AbortError" ||
+  error?.name === "APIUserAbortError" ||
+  error?.cause?.name === "AbortError" ||
+  Boolean(signal?.aborted);
 
 // OpenAI-compatible client: works with Groq, OpenRouter, etc. Only .env changes between providers
 const getClient = () => {
@@ -56,6 +63,7 @@ export const streamChat = async ({
   messages,
   maxTokens,
   temperature = 0.4,
+  reasoningEffort,
   signal,
   onDelta,
   tools,
@@ -77,7 +85,7 @@ export const streamChat = async ({
           stream: true,
           stream_options: { include_usage: true },
           ...(tools && { tools, tool_choice: "auto" }),
-          ...reasoningOption(),
+          ...reasoningOption(reasoningEffort),
         },
         { signal },
       );
@@ -101,7 +109,7 @@ export const streamChat = async ({
         if (usage?.total_tokens) tokens = usage.total_tokens;
       }
     } catch (error) {
-      if (signal?.aborted) {
+      if (isAbortError(error, signal)) {
         aborted = true;
       } else if (attempt === 1 && !text && isFlaky(error)) {
         console.log(`LLM RETRY... ${error.message}`);
@@ -112,6 +120,13 @@ export const streamChat = async ({
     }
 
     if (!tokens) tokens = estimateTokens(messages, text);
+
+    // empty replies are hard to debug: log the budget and the reasoning effort
+    if (!text && !aborted) {
+      console.log(
+        `EMPTY LLM REPLY model=${model} finish=${finishReason} tokens=${tokens} maxTokens=${maxTokens} effort=${reasoningEffort || process.env.LLM_REASONING_EFFORT || "none"}`,
+      );
+    }
 
     return { text, tokens, finishReason, aborted, toolCalls };
   }
@@ -143,7 +158,7 @@ export const completeChat = async ({
 
       return { text, tokens };
     } catch (error) {
-      if (attempt === 1 && !signal?.aborted && isFlaky(error)) {
+      if (attempt === 1 && !isAbortError(error, signal) && isFlaky(error)) {
         console.log(`LLM RETRY... ${error.message}`);
         continue;
       }

@@ -1,5 +1,5 @@
 import { Resvg } from "@resvg/resvg-js";
-import { completeChat, pickModel } from "./llmClient.js";
+import { completeChat, isAbortError, pickModel } from "./llmClient.js";
 import { IMAGE_PROMPT_PROMPT, IMAGE_EDIT_PROMPT } from "./prompts.js";
 
 // user-facing error: safe to show in production
@@ -14,8 +14,9 @@ const runStage = async (stage, run) => {
   try {
     return await run();
   } catch (error) {
-    console.log(`IMAGE ERROR [${stage}]...`, error);
+    // a user stop is not an error: rethrow quietly, real errors keep their log
     error.stage = stage;
+    if (!isAbortError(error)) console.log(`IMAGE ERROR [${stage}]...`, error);
     throw error;
   }
 };
@@ -58,7 +59,7 @@ export const writeImagePrompt = async ({ history = [], content, signal }) =>
   });
 
 // Generates an image with Cloudflare Workers AI (free daily tier). Returns { buffer, mimeType }
-export const generateArt = async (prompt) =>
+export const generateArt = async (prompt, signal) =>
   runStage("cloudflare", async () => {
     const accountId = process.env.CF_ACCOUNT_ID;
     const token = process.env.CF_API_TOKEN;
@@ -78,8 +79,8 @@ export const generateArt = async (prompt) =>
           "content-type": "application/json",
         },
         body: JSON.stringify({ prompt, steps: 4 }),
-        // hard timeout for the image request
-        signal: AbortSignal.timeout(60000),
+        // hard timeout, still cancellable by the user's stop signal
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
       },
     );
 
@@ -150,7 +151,8 @@ export const rewriteImageSource = async ({ kind, source, instruction, signal }) 
       ],
       maxTokens: Number(process.env.IMAGE_EDIT_MAX_TOKENS) || 4000,
       temperature: 0.4,
-      signal,
+      // hard timeout, still cancellable by the user's stop signal
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
     });
 
     return (result.text || "").trim();

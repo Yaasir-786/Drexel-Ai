@@ -38,6 +38,9 @@ Building even a small website needs design, code, setup and debugging. Drexel-Ai
 - A Claude-style chat page: normal questions get normal answers, build requests produce real projects
 - A small classifier decides per message whether it is a question (chat) or a build request
 - Switching between chatting and building inside the same chat works: the Planner decides whether a request edits the current files or starts a brand new project
+- **Image generation and image editing** right inside the chat (Cloudflare Workers AI), with a per-user daily image limit
+- **Download the files as a zip**: the chat hands over the built files as a zip card whenever you ask for it
+- **Website links are read**: paste a link and the planner reads the page text before answering
 - Chat history is saved and listed in the sidebar; code blocks have a Copy button
 - Chat builds are stored with the chat — they never create an entry in the Projects page
 
@@ -254,7 +257,7 @@ cd Drexel-Ai
 npm install
 cd Client && npm install && cd ..
 
-# Set up environment variables (see below) in a .env file in the root
+# Set up environment variables: copy .env.example to .env and fill in your values
 
 # Create the admin user
 npm run seed
@@ -290,6 +293,7 @@ CODER_MODEL=your_llm_model
 LLM_REASONING_EFFORT=medium
 
 # Optional limits
+CHAT_MAX_TOKENS=4000
 CODER_MAX_TOKENS=12000
 REVIEW_MAX_TOKENS=8000
 PLANNER_MAX_TOKENS=2000
@@ -308,7 +312,30 @@ ADMIN_PASSWORD=your_admin_password
 CLOUDINARY_CLOUD_NAME=your_cloud_name
 CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
+
+# Images (Cloudflare Workers AI) + zip upload limit
+CF_ACCOUNT_ID=your_cloudflare_account_id
+CF_API_TOKEN=your_cloudflare_api_token
+IMAGE_MODEL=@cf/black-forest-labs/flux-1-schnell
+MAX_ZIP_MB=50
 ```
+
+### Most-used variables explained
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `CF_ACCOUNT_ID` | – | Cloudflare account id for image generation |
+| `CF_API_TOKEN` | – | Cloudflare API token for image generation |
+| `IMAGE_MODEL` | `@cf/black-forest-labs/flux-1-schnell` | Cloudflare Workers AI model that generates the images |
+| `IMAGE_CREDITS` | `5` | Credits charged per generated image |
+| `IMAGE_DAILY_LIMIT` | `10` | Images one user can generate per day (admins are unlimited) |
+| `VISION_MODEL` | – | Vision model for reading attached images; empty = image understanding off |
+| `MAX_ZIP_MB` | `50` | Maximum upload size of a zip project file |
+| `CHAT_MAX_TOKENS` | `4000` | Token budget for one chat reply |
+| `CHAT_REASONING_EFFORT` | `low` | Reasoning effort for chat replies (low = fast answers, fewer empty replies) |
+| `DAILY_CREDITS` | `100` | Credits refilled every day at IST midnight |
+| `DAILY_CREDIT_LIMIT` | `100` | Maximum credits a user can accumulate |
+| `DEFAULT_CREDITS` | `200` | Credits a new user starts with |
 
 ## Roadmap
 

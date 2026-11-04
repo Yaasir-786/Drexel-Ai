@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import mongoose from "mongoose";
 import Project, {
   DEFAULT_PROJECT_NAME,
   PROJECT_LIMITS,
@@ -7,6 +8,7 @@ import Chat, { MAX_CHAT_MESSAGES } from "../../models/chatModel.js";
 import Document from "../../models/documentModel.js";
 import credit from "../../middleware/creditMiddleware.js";
 import cloudinaryService from "../../middleware/cloudinaryMiddleware.js";
+import { cleanupChatAssets } from "../../utils/assetCleanup.js";
 import {
   IMAGE_DAILY_LIMIT,
   reserveImage,
@@ -15,6 +17,7 @@ import {
 import {
   completeChat,
   friendlyLlmError,
+  isAbortError,
   pickModel,
 } from "../../agents/llmClient.js";
 import {
@@ -122,6 +125,13 @@ const makeSender = (res) => (event, data) => {
 // Events sent to the client:
 // meta, status, token, plan, agent_switch, file_start, file_chunk, file_end,
 // warning, error, credits, done
+
+// requestId -> { userId, controller, done }: lets a second request stop a running stream
+const activeStreams = new Map();
+
+// requestId -> { userId, model, convoId }: where a finished stream saved its messages (5 min)
+const recentStreams = new Map();
+
 const streamAgent = async (req, res) => {
   const { projectId, chatId, mode, type, attachments } = req.body;
   const userId = req.user._id;
@@ -150,7 +160,32 @@ const streamAgent = async (req, res) => {
   }
 
   const convo = chatOnly ? chat : project;
+
+  // edit re-run: the tail after the edited message is out of this run entirely
+  const replaceFromMessageId = req.body.replaceFromMessageId;
+  let replaceIndex = -1;
+  if (replaceFromMessageId) {
+    replaceIndex = (convo.messages || []).findIndex(
+      (msg) => String(msg._id) === replaceFromMessageId,
+    );
+    if (replaceIndex === -1 || convo.messages[replaceIndex].role !== "user") {
+      res.status(400);
+      throw new Error("Message Not Found...");
+    }
+  }
+
+  // only the part before the edited message counts as history here
+  const baseMessages =
+    replaceIndex >= 0
+      ? convo.messages.slice(0, replaceIndex)
+      : convo.messages || [];
+
   const currentFiles = convo.files || [];
+
+  // if nothing before the edited message produced files, this run starts empty
+  const headHasFiles =
+    replaceIndex < 0 || baseMessages.some((msg) => (msg.files || []).length > 0);
+  const runFiles = replaceIndex >= 0 && !headHasFiles ? [] : currentFiles;
 
   // users can never forge <handoff>, <file> or <untrusted_document> tags
   const message =
@@ -166,9 +201,7 @@ const streamAgent = async (req, res) => {
   // follow-up questions can still see the PDF text and the images
   let rebuildsLeft = 2;
   const rebuildIndexes = new Set();
-  const recentMessages = (convo.messages || [])
-    .slice(-HISTORY_LIMIT)
-    .filter((item) => item.content);
+  const recentMessages = baseMessages.slice(-HISTORY_LIMIT).filter((item) => item.content);
 
   for (let i = recentMessages.length - 1; i >= 0; i--) {
     const item = recentMessages[i];
@@ -178,14 +211,13 @@ const streamAgent = async (req, res) => {
     }
   }
 
-  const history = recentMessages.map((item, index) => {
-    // messages with a code block keep more text, so a function shown earlier can be changed later
-    const limit = item.content.includes("```") ? 6000 : 1500;
+  const mappedHistory = recentMessages.map((item, index) => {
+    // keep up to 8000 chars per message, so code blocks stay complete
     if (rebuildIndexes.has(index)) {
       return {
         role: "user",
         content: buildUserContent(
-          item.content.slice(0, limit),
+          item.content.slice(0, 8000),
           item.attachments,
           allowImages,
         ),
@@ -193,9 +225,21 @@ const streamAgent = async (req, res) => {
     }
     return {
       role: item.role,
-      content: item.content.slice(0, limit),
+      content: item.content.slice(0, 8000),
     };
   });
+
+  // cap the whole history at about 24000 chars, dropping the oldest first
+  let historyTotal = mappedHistory.reduce(
+    (sum, item) => sum + item.content.length,
+    0,
+  );
+  let historyStart = 0;
+  while (historyTotal > 24000 && historyStart < mappedHistory.length - 1) {
+    historyTotal -= mappedHistory[historyStart].content.length;
+    historyStart += 1;
+  }
+  const history = mappedHistory.slice(historyStart);
 
   // the chat/planner models need vision when the recent history contains images
   const historyHasImages = history.some((entry) =>
@@ -272,8 +316,26 @@ const streamAgent = async (req, res) => {
   // "Stop generation" = client closes the connection -> LLM calls are cancelled
   const controller = new AbortController();
   const signal = controller.signal;
+
+  // resolved once the stream finished saving, so the stop route can trim the text
+  let finishSaving = () => {};
+  const done = new Promise((resolve) => {
+    finishSaving = resolve;
+  });
+
+  // register for the explicit stop route (works even when a proxy keeps the socket open)
+  if (req.body.requestId) {
+    activeStreams.set(req.body.requestId, {
+      userId: String(userId),
+      controller,
+      done,
+    });
+  }
+
   res.on("close", () => {
-    if (!res.writableEnded) controller.abort();
+    if (!res.writableEnded) {
+      controller.abort();
+    }
   });
 
   const heartbeat = setInterval(() => {
@@ -299,6 +361,10 @@ const streamAgent = async (req, res) => {
     images = [],
     zip = null,
   }) => {
+    // never save an empty assistant bubble
+    const hasSubstance = content?.trim() || images.length || files.length || zip;
+    if (!hasSubstance) return;
+
     const tokens = ownTokens + pendingTokens;
     pendingTokens = 0;
     const creditsUsed = credit.tokensToCredits(tokens);
@@ -312,6 +378,7 @@ const streamAgent = async (req, res) => {
       files,
       images,
       ...(zip && { zip }),
+      ...(req.body.requestId && { requestId: req.body.requestId }),
       tokensUsed: tokens,
       creditsUsed,
     });
@@ -324,7 +391,9 @@ const streamAgent = async (req, res) => {
     const linkUrls = extractUrls(message);
     if (linkUrls.length > 0) {
       send("status", { agent: "planner", message: "Reading the link..." });
-      const pages = await Promise.all(linkUrls.map((url) => fetchPageText(url)));
+      const pages = await Promise.all(
+        linkUrls.map((url) => fetchPageText(url, signal)),
+      );
       linkAttachments = linkUrls.map((url, index) => ({
         type: "link",
         name: url,
@@ -353,25 +422,42 @@ const streamAgent = async (req, res) => {
       }
     }
 
+    // stop pressed while reading the links -> skip the agents and finish quietly
+    const stoppedEarly = signal.aborted;
+
     // cheap keyword check: the user just wants a zip of the files (works in chat and build mode)
     const zipRequest = isZipRequest(message);
-    // does the user also want a zip handover after a build?
+    // delivering the files as a zip is asked with words like give/send/download
+    const ZIP_DELIVER =
+      /\b(give|send|download|export|chahiye|bhej)\b|\b(want|need)\s+(?:one|a|an|the|my)?\s*zip\b|\bzip(?:\s+file)?\s+(?:de|do|dedo)\b|\bzip(?:\s+file)?\s+(?:me|mein)\s+(?:de|do|dedo|bhej)\b|\b(?:as|in|into)\s+(?:a\s+)?zip\b/i;
+    // reading or asking about a zip is not delivering one
+    const ZIP_NOT_DELIVER =
+      /\b(inside|andar|extract|read|explain|kya|what|kitna|kaun)\b|\bzip(?:\s+file)?\s+(?:ka|ke|ki|se)\b|\bme se\b|\bse la\b|\bfrom the zip\b/i;
     const wantsZipAfterBuild =
       /\bzip\b/i.test(message) &&
-      !/\b(me se|se la|from the zip|inside|andar|extract|read|explain|kya|what)\b/i.test(message);
+      ZIP_DELIVER.test(message) &&
+      !ZIP_NOT_DELIVER.test(message);
 
-    let goBuild = !zipRequest && (mode === "build" || type === "fix");
+    let goBuild = !zipRequest && !stoppedEarly && (mode === "build" || type === "fix");
 
     // ---------- ZIP: hand over the files as a download (no LLM call, no credits) ----------
-    if (zipRequest) {
-      await handleZipRequest({ send, addRecord, convo, currentFiles });
+    if (stoppedEarly) {
+      // stop pressed while reading the links -> no agents run
+    } else if (zipRequest) {
+      // the zip scan only sees the messages of this run
+      await handleZipRequest({
+        send,
+        addRecord,
+        convo: { ...convo, messages: baseMessages },
+        currentFiles: runFiles,
+      });
     } else if (!goBuild) {
       // ---------- CHAT: Planner Agent answers (or detects that the user wants a build) ----------
       send("status", { agent: "planner", message: "Planner is thinking..." });
 
       // the last uploaded zip in the messages also counts as something to package
       let hasZipUpload = false;
-      for (const item of convo.messages || []) {
+      for (const item of baseMessages) {
         if ((item.attachments || []).some((file) => file.type === "zip")) {
           hasZipUpload = true;
           break;
@@ -382,7 +468,7 @@ const streamAgent = async (req, res) => {
         history,
         // the plain message only: userContent already contains the zip/PDF text
         content: message,
-        hasFiles: currentFiles.length > 0,
+        hasFiles: runFiles.length > 0,
         hasZip: hasZipUpload,
         hasImages,
         signal,
@@ -390,10 +476,18 @@ const streamAgent = async (req, res) => {
       pendingTokens = intent.tokens;
       goBuild = intent.intent === "BUILD";
 
-      if (intent.intent === "ZIP") {
+      // stop pressed during the intent check -> skip the chat/image/zip agents
+      if (signal.aborted) {
+        // finish quietly
+      } else if (intent.intent === "ZIP") {
         // ---------- ZIP: the LLM detected a zip request the keyword check missed ----------
         pendingTokens = 0;
-        await handleZipRequest({ send, addRecord, convo, currentFiles });
+        await handleZipRequest({
+          send,
+          addRecord,
+          convo: { ...convo, messages: baseMessages },
+          currentFiles: runFiles,
+        });
       } else if (intent.intent === "IMAGE") {
         // ---------- IMAGE: generate a picture (no files, no build flow) ----------
         if (req.user.credits < IMAGE_CREDITS) {
@@ -417,13 +511,19 @@ const streamAgent = async (req, res) => {
               content: imageRequestText(message, history),
               signal,
             });
+
+            // stop pressed right after the prompt -> no generation
+            if (signal.aborted) throw new Error("aborted");
             pendingTokens += planned.tokens;
 
             // art goes to the image model, text layouts are rendered from SVG
             const image =
               planned.kind === "layout"
                 ? renderSvg(planned.content)
-                : await generateArt(planned.content);
+                : await generateArt(planned.content, signal);
+
+            // stop pressed right after the generation -> no upload
+            if (signal.aborted) throw new Error("aborted");
 
             // the upload can fail on its own -> tag the stage
             let uploaded;
@@ -432,9 +532,17 @@ const streamAgent = async (req, res) => {
                 public_id: `delux_${userId}_${crypto.randomUUID()}`,
               });
             } catch (error) {
-              console.log("IMAGE ERROR [cloudinary-upload]...", error);
+              // a user stop is not an error
+              if (!isAbortError(error, signal))
+                console.log("IMAGE ERROR [cloudinary-upload]...", error);
               error.stage = "cloudinary-upload";
               throw error;
+            }
+
+            // stop arrived after the upload -> delete the image again, no save, no charge
+            if (signal.aborted) {
+              await cloudinaryService.deleteFromCloudinary(uploaded.public_id);
+              throw new Error("aborted");
             }
 
             send("image", { url: uploaded.secure_url, publicId: uploaded.public_id });
@@ -459,7 +567,7 @@ const streamAgent = async (req, res) => {
           } catch (error) {
             // give the reserved daily slot back, the image was not delivered
             await refundImage(req.user);
-            if (!signal.aborted) {
+            if (!isAbortError(error, signal)) {
               errored = true;
               // every stage logs its own failure; this catches anything untagged
               if (!error.stage) console.log("IMAGE ERROR...", error);
@@ -471,26 +579,43 @@ const streamAgent = async (req, res) => {
         const chatResult = await runChatAgent({
           history,
           content: userContent,
-          filesContext: buildFilesContext(currentFiles, { budget: 6000 }),
+          filesContext: buildFilesContext(runFiles, { budget: 6000 }),
           useVision,
           signal,
           onText: (text) =>
             send("token", { agent: "planner", phase: "chat", text }),
         });
 
-        addRecord({
-          agent: "planner",
-          recordMode: "chat",
-          content: chatResult.text.trim(),
-          tokens: chatResult.tokens,
-        });
+        // a saved but empty reply shows a blank bubble -> error instead
+        if (!chatResult.text.trim()) {
+          // the consumed tokens are still charged
+          const used = chatResult.tokens + pendingTokens;
+          totalTokens += used;
+          totalCredits = credit.round2(totalCredits + credit.tokensToCredits(used));
+          pendingTokens = 0;
+
+          if (!signal.aborted) {
+            errored = true;
+            send("error", {
+              message:
+                "The model returned an empty reply (it ran out of thinking budget). Please try again or ask a shorter question.",
+            });
+          }
+        } else {
+          addRecord({
+            agent: "planner",
+            recordMode: "chat",
+            content: chatResult.text.trim(),
+            tokens: chatResult.tokens,
+          });
+        }
       }
     }
 
     // ---------- BUILD: Planner (plan) -> Coder (code -> review -> fix) ----------
     if (goBuild && !signal.aborted) {
       effectiveMode = "build";
-      const hasFiles = currentFiles.length > 0;
+      const hasFiles = runFiles.length > 0;
       let plan;
 
       if (type === "fix") {
@@ -517,7 +642,7 @@ const streamAgent = async (req, res) => {
         const planned = await runPlannerAgent({
           request: userContent,
           history,
-          filesContext: buildFilesContext(currentFiles, { budget: 6000 }),
+          filesContext: buildFilesContext(runFiles, { budget: 6000 }),
           hasFiles,
           useVision,
           signal,
@@ -534,7 +659,7 @@ const streamAgent = async (req, res) => {
         send("plan", { plan });
       }
 
-      const baseFiles = plan.mode === "new" ? [] : currentFiles;
+      const baseFiles = plan.mode === "new" ? [] : runFiles;
 
       send("agent_switch", { from: "planner", to: "coder" });
       send("status", {
@@ -656,16 +781,16 @@ const streamAgent = async (req, res) => {
 
   clearInterval(heartbeat);
 
+  // the stream is over: the stop route has nothing to abort anymore
+  if (req.body.requestId) activeStreams.delete(req.body.requestId);
+
   // ---------- save chat + deduct credits (also when the user pressed stop) ----------
   let remainingCredits = null;
+  let userMessageId = null;
   const aborted = signal.aborted;
 
   try {
     if (records.length > 0) {
-      if (aborted) {
-        records[records.length - 1].content += "\n\n(Generation stopped)";
-      }
-
       const userMessage = {
         role: "user",
         mode: effectiveMode,
@@ -683,8 +808,15 @@ const streamAgent = async (req, res) => {
         ],
       };
 
+      // explicit ids, so the saved messages can be addressed later (edit re-run)
+      userMessageId = new mongoose.Types.ObjectId();
+      userMessage._id = userMessageId;
+      for (const record of records) {
+        record._id = new mongoose.Types.ObjectId();
+      }
+
       // Claude-style title: after the first reply of a new chat, ask the model for a short title
-      if (chatOnly && (!chat.title || chat.title === "New chat")) {
+      if (chatOnly && !aborted && (!chat.title || chat.title === "New chat")) {
         const words = (typeof message === "string" ? message : "")
           .trim()
           .split(/\s+/)
@@ -716,25 +848,84 @@ const streamAgent = async (req, res) => {
             title = generated.charAt(0).toUpperCase() + generated.slice(1);
           }
         } catch (error) {
-          console.log(`TITLE GENERATION FAILED... ${error.message}`);
+          // a user stop is not a failure
+          if (!isAbortError(error, signal))
+            console.log(`TITLE GENERATION FAILED... ${error.message}`);
         }
         await Chat.updateOne({ _id: chat._id }, { $set: { title } });
         send("title", { chatId: chat._id, title });
       }
 
       const Model = chatOnly ? Chat : Project;
-  await Model.updateOne({ _id: convo._id }, {
-    $inc: {
-      creditsUsed: credit.round2(totalCredits),
-      tokensUsed: totalTokens,
-    },
-    $push: {
-      messages: {
-        $each: [userMessage, ...records],
-        $slice: -MAX_CHAT_MESSAGES,
-      },
-    },
-  });
+
+      // an edit re-run rewrites the tail in one update; a normal send appends
+      const replaceTail =
+        replaceIndex >= 0
+          ? [...baseMessages, userMessage, ...records].slice(-MAX_CHAT_MESSAGES)
+          : null;
+
+      await Model.updateOne(
+        { _id: convo._id },
+        {
+          $inc: {
+            creditsUsed: credit.round2(totalCredits),
+            tokensUsed: totalTokens,
+          },
+          ...(replaceTail
+            ? {
+                $set: {
+                  messages: replaceTail,
+                  // files that only the replaced tail produced are gone now
+                  ...(!headHasFiles &&
+                    !records.some((record) => record.files.length) && {
+                      files: [],
+                    }),
+                },
+              }
+            : {
+                $push: {
+                  messages: {
+                    $each: [userMessage, ...records],
+                    $slice: -MAX_CHAT_MESSAGES,
+                  },
+                },
+              }),
+        },
+      );
+
+      // the replaced tail left the chat: clean up its assets, but never the
+      // ones the new request still uses (same publicId or documentId)
+      if (replaceTail) {
+        const stillUsed = new Set(
+          attachments.flatMap((file) =>
+            [file.publicId, file.documentId].filter(Boolean).map(String),
+          ),
+        );
+        const removedMessages = convo.messages
+          .slice(replaceIndex)
+          .map((msg) => ({
+            ...msg,
+            attachments: (msg.attachments || []).filter(
+              (file) =>
+                !(file.publicId && stillUsed.has(String(file.publicId))) &&
+                !(file.documentId && stillUsed.has(String(file.documentId))),
+            ),
+            images: (msg.images || []).filter(
+              (img) => !(img.publicId && stillUsed.has(String(img.publicId))),
+            ),
+          }));
+        await cleanupChatAssets({ messages: removedMessages });
+      }
+
+      // remember where this stream saved, so the stop route can trim the text
+      if (req.body.requestId) {
+        recentStreams.set(req.body.requestId, {
+          userId: String(userId),
+          model: chatOnly ? "chat" : "project",
+          convoId: convo._id,
+        });
+        setTimeout(() => recentStreams.delete(req.body.requestId), 5 * 60 * 1000);
+      }
 
       const updatedUser = await credit.deductCredits(
         userId,
@@ -748,6 +939,9 @@ const streamAgent = async (req, res) => {
   } catch (error) {
     console.log(`AGENT SAVE FAILED... ${error.message}`);
   }
+
+  // the saved text is now ready for the stop route's trim
+  finishSaving();
 
   if (!res.writableEnded && !res.destroyed) {
     send("credits", {
@@ -764,6 +958,8 @@ const streamAgent = async (req, res) => {
       tokensUsed: totalTokens,
       creditsUsed: credit.round2(totalCredits),
       credits: remainingCredits,
+      // the saved user message, so the client can offer Edit for it
+      userMessageId: userMessageId ? String(userMessageId) : null,
     });
     res.end();
   }
@@ -773,6 +969,16 @@ const streamAgent = async (req, res) => {
 const imageEdit = async (req, res) => {
   const { chatId, projectId, imageUrl, instruction } = req.body;
   const userId = req.user._id;
+
+  // the client can cancel the edit by closing the connection
+  const controller = new AbortController();
+  const signal = controller.signal;
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      console.log("IMAGE EDIT STOPPED by client");
+      controller.abort();
+    }
+  });
 
   // ownership check
   const chatOnly = Boolean(chatId);
@@ -818,13 +1024,20 @@ const imageEdit = async (req, res) => {
       kind: sourceImage.kind,
       source: sourceImage.source,
       instruction,
+      signal,
     });
+
+    // stop pressed right after the prompt -> no generation
+    if (signal.aborted) throw new Error("aborted");
 
     // generate again the same way as the original image
     const image =
       sourceImage.kind === "layout"
         ? renderSvg(source)
-        : await generateArt(source);
+        : await generateArt(source, signal);
+
+    // stop pressed right after the generation -> no upload
+    if (signal.aborted) throw new Error("aborted");
 
     // the upload can fail on its own -> tag the stage
     try {
@@ -832,13 +1045,25 @@ const imageEdit = async (req, res) => {
         public_id: `delux_${userId}_${crypto.randomUUID()}`,
       });
     } catch (error) {
-      console.log("IMAGE ERROR [cloudinary-upload]...", error);
+      // a user stop is not an error
+      if (!isAbortError(error, signal))
+        console.log("IMAGE ERROR [cloudinary-upload]...", error);
       error.stage = "cloudinary-upload";
       throw error;
+    }
+
+    // stop arrived after the upload -> delete the image again, no save, no charge
+    if (signal.aborted) {
+      await cloudinaryService.deleteFromCloudinary(uploaded.public_id);
+      throw new Error("aborted");
     }
   } catch (error) {
     // give the reserved daily slot back, the image was not delivered
     await refundImage(req.user);
+    // the client stopped the edit -> finish quietly, nothing saved, nothing charged
+    if (isAbortError(error, signal)) {
+      return res.status(200).json({ message: "Image edit stopped." });
+    }
     throw error;
   }
 
@@ -881,6 +1106,85 @@ const imageEdit = async (req, res) => {
   });
 };
 
-const agentController = { streamAgent, imageEdit };
+// cuts one saved assistant record down to what the client actually showed before the stop
+const trimSavedStream = async ({ Model, convoId, requestId, shownLength }) => {
+  const convo = await Model.findById(convoId).select("messages").lean();
+  if (!convo) return false;
+
+  // the assistant record of this stream: plain text, no images, files or zip
+  let target = null;
+  for (const msg of convo.messages || []) {
+    const plain =
+      msg.role === "assistant" &&
+      msg.requestId === requestId &&
+      !(msg.images || []).length &&
+      !(msg.files || []).length &&
+      !msg.zip;
+    if (plain) target = msg;
+  }
+  if (!target || (target.content || "").length <= shownLength) return false;
+
+  // trim with the filtered positional operator
+  await Model.updateOne(
+    { _id: convoId },
+    {
+      $set: {
+        "messages.$[msg].content": target.content.slice(0, shownLength).trimEnd(),
+      },
+    },
+    {
+      arrayFilters: [
+        {
+          "msg.requestId": requestId,
+          "msg.role": "assistant",
+          "msg.images": { $in: [null, []] },
+          "msg.files": { $in: [null, []] },
+          "msg.zip": { $eq: null },
+        },
+      ],
+    },
+  );
+  return true;
+};
+
+// ---------- POST /api/agent/stop: abort a running stream and trim the saved text ----------
+const stopAgent = async (req, res) => {
+  const { requestId, shownLength } = req.body;
+  let stopped = false;
+
+  // only the owner of the stream may stop it
+  const entry = activeStreams.get(requestId);
+  if (entry && entry.userId === String(req.user._id)) {
+    entry.controller.abort();
+    stopped = true;
+
+    // wait up to 5 s for the stream to finish saving its partial answer
+    await Promise.race([
+      entry.done,
+      new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
+  }
+
+  // trim the saved answer down to what the user actually saw
+  const recent = recentStreams.get(requestId);
+  if (
+    recent &&
+    recent.userId === String(req.user._id) &&
+    typeof shownLength === "number"
+  ) {
+    const Model = recent.model === "chat" ? Chat : Project;
+    const trimmed = await trimSavedStream({
+      Model,
+      convoId: recent.convoId,
+      requestId,
+      shownLength,
+    });
+    if (trimmed) stopped = true;
+  }
+
+  res.status(200).json({ stopped });
+};
+
+const agentController = { streamAgent, imageEdit, stopAgent };
 
 export default agentController;

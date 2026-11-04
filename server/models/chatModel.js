@@ -51,6 +51,10 @@ export const messageSchema = new mongoose.Schema(
       name: { type: String },
       fileCount: { type: Number },
     },
+    // requestId of the stream that produced this message (used by the stop route)
+    requestId: {
+      type: String,
+    },
     tokensUsed: {
       type: Number,
       default: 0,
@@ -64,7 +68,6 @@ export const messageSchema = new mongoose.Schema(
       default: Date.now,
     },
   },
-  { _id: false },
 );
 
 const fileSchema = new mongoose.Schema(

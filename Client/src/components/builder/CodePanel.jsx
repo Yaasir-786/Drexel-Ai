@@ -17,6 +17,7 @@ export default function CodePanel({
   isNew = false,
   onSave,
   isSaving = false,
+  isGenerating = false,
 }) {
   const sortedPaths = Object.keys(files || {}).sort();
 
@@ -71,7 +72,7 @@ export default function CodePanel({
   };
 
   const handleSave = async () => {
-    if (!onSave || isSaving) return;
+    if (!onSave || isSaving || isGenerating) return;
     try {
       // the parent gets the edited files as [{ path, content }]
       await onSave(
@@ -87,13 +88,16 @@ export default function CodePanel({
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        if (isEdited && !isSaving) handleSave();
+        if (isEdited && !isSaving && !isGenerating) {
+          // only take over the browser shortcut when there is something to save
+          e.preventDefault();
+          handleSave();
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  });
+  }, [isEdited, isSaving, isGenerating, onSave, fileMap]);
 
   const handleCopy = () => {
     const code = fileMap[currentActiveFile] || '';
@@ -185,7 +189,7 @@ export default function CodePanel({
               <Button
                 variant="primary"
                 onClick={handleSave}
-                disabled={isSaving}
+                disabled={isSaving || isGenerating}
                 className="h-7 px-3 text-xs"
                 icon={Save}
               >

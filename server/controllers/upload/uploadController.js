@@ -181,25 +181,6 @@ const uploadFiles = async (req, res) => {
   res.status(201).json({ files: results });
 };
 
-const deleteFile = async (req, res) => {
-  const { publicId } = req.params;
-
-  // users can only delete their own files
-  if (!publicId.startsWith(`delux_${req.user._id}_`) || !/^[A-Za-z0-9_-]+$/.test(publicId)) {
-    res.status(403);
-    throw new Error("You Can Only Delete Your Own Files...");
-  }
-
-  const deleted = await cloudinaryService.deleteFromCloudinary(publicId);
-
-  if (!deleted) {
-    res.status(404);
-    throw new Error("File Not Found...");
-  }
-
-  res.status(200).json({ message: "File Deleted SuccessFully..." });
-};
-
-const uploadController = { uploadFiles, deleteFile };
+const uploadController = { uploadFiles };
 
 export default uploadController;
