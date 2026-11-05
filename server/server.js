@@ -7,6 +7,8 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import colors from "colors";
+import path from "path";
+import { fileURLToPath } from "url";
 import connectDb from "./config/dbConfig.js";
 
 import errorHandler, { notFound } from "./middleware/errorHandler.js";
@@ -45,7 +47,11 @@ connectDb();
 
 // Security headers + CORS (only our own frontend)
 if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
-app.use(helmet());
+// CSP is off because the app is served from the same origin as the API and
+// loads Google Fonts, Cloudinary images and the Sandpack preview iframe.
+app.use(
+  helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }),
+);
 app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
 
 // Body-Parser
@@ -82,6 +88,21 @@ app.use("/api/uploads", uploadRoutes);
 
 // ADMIN ROUTES
 app.use("/api/admin", adminRoutes);
+
+// Unknown /api routes -> JSON 404
+app.use("/api", notFound);
+
+// SERVE REACT PRODUCTION BUILD (same as Docker image: ../Client/dist)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const frontendPath = path.join(__dirname, "../Client/dist");
+
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(frontendPath));
+  app.get("/{*path}", (req, res) => {
+    res.sendFile(path.join(frontendPath, "index.html"));
+  });
+}
 
 // 404 + error Handle
 app.use(notFound);
