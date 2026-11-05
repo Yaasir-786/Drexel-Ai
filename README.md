@@ -316,7 +316,7 @@ CLOUDINARY_API_SECRET=your_api_secret
 # Images (Cloudflare Workers AI) + zip upload limit
 CF_ACCOUNT_ID=your_cloudflare_account_id
 CF_API_TOKEN=your_cloudflare_api_token
-IMAGE_MODEL=@cf/black-forest-labs/flux-1-schnell
+IMAGE_MODEL=your_image_model
 MAX_ZIP_MB=50
 ```
 
@@ -326,7 +326,7 @@ MAX_ZIP_MB=50
 | --- | --- | --- |
 | `CF_ACCOUNT_ID` | – | Cloudflare account id for image generation |
 | `CF_API_TOKEN` | – | Cloudflare API token for image generation |
-| `IMAGE_MODEL` | `@cf/black-forest-labs/flux-1-schnell` | Cloudflare Workers AI model that generates the images |
+| `IMAGE_MODEL` | – | Cloudflare Workers AI model that generates the images |
 | `IMAGE_CREDITS` | `5` | Credits charged per generated image |
 | `IMAGE_DAILY_LIMIT` | `10` | Images one user can generate per day (admins are unlimited) |
 | `VISION_MODEL` | – | Vision model for reading attached images; empty = image understanding off |
