@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from "react";
-import { Eye, Code2, Download, X } from "lucide-react";
+import { Eye, Code2, X } from "lucide-react";
 import PreviewPanel from "../builder/PreviewPanel";
 import CodePanel from "../builder/CodePanel";
-import { downloadZip } from "../../utils/downloadFiles";
 
 export default function ArtifactPanel({
   files = [],
@@ -62,17 +61,6 @@ export default function ArtifactPanel({
         </div>
 
         <div className="flex items-center gap-2">
-          {preview && (
-            <button
-              type="button"
-              onClick={() => downloadZip(files, title)}
-              className="h-8 px-2.5 rounded-lg border border-line bg-surface hover:bg-card text-xs text-ink flex items-center gap-1.5 cursor-pointer"
-              title="Download ZIP"
-            >
-              <Download size={14} />
-              <span className="hidden sm:inline">Download ZIP</span>
-            </button>
-          )}
           <button
             type="button"
             onClick={onClose}

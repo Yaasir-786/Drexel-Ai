@@ -212,8 +212,8 @@ export default function Builder() {
             setStatusMessage(
               /review/i.test(data.message) ? "Reviewing changes…" : /coder|code/i.test(data.message) ? "Generating code…" : "Thinking…"
             );
-            // image generation: show a shimmer placeholder in the chat
-            if (/image/i.test(data.message)) {
+            // image GENERATION: shimmer box in the chat (reading an image has no box)
+            if (/image/i.test(data.message) && /creating|generating/i.test(data.message)) {
               setMessages((prev) =>
                 prev.some((m) => m.type === 'image-loading')
                   ? prev
@@ -490,7 +490,6 @@ export default function Builder() {
         <BuilderTopBar
           projectName={projectName}
           onRenameProject={handleRename}
-          onDownloadZip={() => downloadZip(files, projectName)}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           canPreview={hasGeneratedCode}
           isPreviewOpen={showWorkspace}

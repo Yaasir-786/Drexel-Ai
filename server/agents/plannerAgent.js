@@ -154,7 +154,6 @@ export const runChatAgent = async ({
   history,
   content,
   filesContext,
-  useVision,
   signal,
   onText,
 }) => {
@@ -174,7 +173,7 @@ export const runChatAgent = async ({
   const reasoningEffort = process.env.CHAT_REASONING_EFFORT || "low";
 
   const result = await streamChat({
-    model: pickModel("planner", useVision),
+    model: pickModel("planner"),
     messages,
     maxTokens: limits().chat,
     temperature: 0.5,
@@ -183,12 +182,17 @@ export const runChatAgent = async ({
     onDelta: onText,
   });
 
-  // empty reply (all budget went to hidden thinking): retry once with a bigger budget
-  if (!result.text.trim() && !result.aborted) {
+  // other empty replies (finish "stop"): retry once with a bigger budget
+  // (finish "length" is already retried inside streamChat: thinking used the budget)
+  if (
+    !result.text.trim() &&
+    !result.aborted &&
+    result.finishReason !== "length"
+  ) {
     const retryMax = Math.min(limits().chat * 2, 8000);
     console.log(`EMPTY CHAT REPLY, retrying once with maxTokens=${retryMax}...`);
     const retry = await streamChat({
-      model: pickModel("planner", useVision),
+      model: pickModel("planner"),
       messages,
       maxTokens: retryMax,
       temperature: 0.5,
@@ -283,7 +287,6 @@ export const runPlannerAgent = async ({
   history,
   filesContext,
   hasFiles,
-  useVision,
   signal,
 }) => {
   const messages = [
@@ -296,7 +299,7 @@ export const runPlannerAgent = async ({
   ];
 
   const { text, tokens } = await completeChat({
-    model: pickModel("planner", useVision),
+    model: pickModel("planner"),
     messages,
     maxTokens: limits().planner,
     temperature: 0.2,

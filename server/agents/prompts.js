@@ -1,3 +1,6 @@
+// PDF text and read web pages go inside <untrusted_document>, images go out as base64 data urls
+import { toDataUrl } from "../utils/imageDataUrl.js";
+
 const LANGUAGE_RULE =
   "Reply in the same language the user writes in (English, Hindi or Hinglish).";
 
@@ -67,6 +70,12 @@ You apply the user's instruction to an existing image definition.
 - If the definition is an SVG: return the complete updated SVG with the instruction applied. Keep viewBox 1080x1350, sans-serif system fonts and copy every other text exactly.
 Reply with the new definition only (the prompt or the complete SVG): no explanations, no markdown fences.`;
 
+// rules for both agents when an image analysis or image description is in the request
+export const REFERENCE_IMAGE_RULES = `REFERENCE IMAGE RULES (only when an "image analysis" or "image description" is part of the request)
+- Rebuild the SAME page: same theme (light or dark exactly as in THEME), same section order, same layout. Use colors only from the PALETTE and COLOR MAP. Copy text and numbers exactly from TEXT. If a text is unreadable, write a realistic value in the same style; never write "placeholder", "lorem ipsum", never invent extra sections.
+- Charts, gauges and progress rings as inline SVG or CSS shapes with the same look; avatars as colored circles with initials; icons as inline SVG (lucide style paths). No emoji, no icon fonts, no external images.
+- Layout with CSS grid/flex, box-sizing: border-box, min-width: 0 on flex/grid children, responsive: no fixed pixel widths for main areas, no overlapping, no horizontal scroll.`;
+
 export const PLANNER_PLAN_PROMPT = `ROLE: PLANNER_PLAN
 You are the Planner Agent of Drexel-Ai. You understand the user's request and produce a step by step plan for the Coder Agent. You NEVER write code.
 
@@ -89,7 +98,7 @@ Return ONLY one valid JSON object (no markdown fences, no extra text) with exact
 MODE (only when the project already has files): use "edit" when the request changes, fixes or extends the existing project. Use "new" when the request is a different project, or asks for a different technology or stack than the existing files, or the user says new, another, instead or from scratch. With "new" the existing files are discarded. When the project has no files the mode is always "new".
 Decide the stack, preview and design level only from the user's latest request, not from earlier builds in this conversation (except in edit mode, where the existing stack is kept).
 
-ATTACHED IMAGE: when the user attached an image (screenshot, mockup or design), "designNotes" must describe what the image shows in detail: overall layout, every visible section, colors (as hex codes), fonts, spacing and all visible text, so the Coder can rebuild the design faithfully.
+ATTACHED IMAGE: when an "image analysis" or "image description" is in the request, "designNotes" must list: the theme, the palette roles (page background, card background, accent, text colors), a font guess based on the screenshot style, and the section order from top to bottom, so the Coder can rebuild the design faithfully.
 
 CHOOSING THE TECHNOLOGY (decide this first)
 1) If the user names technologies, languages, frameworks or libraries, use EXACTLY those, even if the project becomes big. Plan a complete, production-quality project for that stack (clear folder structure, dependency file, README with run steps, .env.example when env vars are needed, validation and error handling).
@@ -111,6 +120,7 @@ DESIGN LEVEL (only for visual output, otherwise "simple")
 
 ${LANGUAGE_RULE} (This applies to the text values inside the JSON.)
 
+${REFERENCE_IMAGE_RULES}
 ${SAFETY_RULES}`;
 
 export const CODER_PROMPT = `ROLE: CODER
@@ -157,6 +167,7 @@ full file content
 
 ${LANGUAGE_RULE} (This applies to the text values inside the JSON.)
 
+${REFERENCE_IMAGE_RULES}
 ${SAFETY_RULES}`;
 
 export const REVIEW_PROMPT = `ROLE: CODER_REVIEW
@@ -190,8 +201,8 @@ const safeName = (name = "file") =>
     .replace(/[^A-Za-z0-9._\- ]/g, "_")
     .slice(0, 80);
 
-// PDF text and read web pages go inside <untrusted_document>, images only when a vision model is configured
-export const buildUserContent = (
+// PDF text and read web pages go inside <untrusted_document>, images go out as base64 data urls
+export const buildUserContent = async (
   message,
   attachments = [],
   allowImages = false,
@@ -218,17 +229,33 @@ export const buildUserContent = (
   if (!images.length) return text;
 
   if (!allowImages) {
-    const names = images.map((file) => safeName(file.name)).join(", ");
-    return `${text}\n\n[The user attached ${images.length} image(s) (${names}) but image viewing is not enabled.]`;
+    // images carry their computed analysis (OCR + colors) and description on file.text
+    let notes = "";
+    for (const file of images) {
+      if (file.text) {
+        notes += `\n\n<untrusted_document name="image analysis: ${safeName(file.name)}">\n${stripReservedTags(file.text)}\n</untrusted_document>`;
+      } else {
+        notes += `\n\n[Image attached: ${safeName(file.name)}]`;
+      }
+    }
+    return `${text}${notes}`;
   }
 
-  return [
-    { type: "text", text: text || "Please look at the attached image(s)." },
-    ...images.map((file) => ({
-      type: "image_url",
-      image_url: { url: file.url },
-    })),
-  ];
+  // images travel as downloaded base64 data urls (Google style), with a
+  // short note for any image that could not be downloaded
+  const content = [{ type: "text", text: text || "Please look at the attached image(s)." }];
+  for (const file of images) {
+    const dataUrl = await toDataUrl(file.url);
+    if (dataUrl) {
+      content.push({ type: "image_url", image_url: { url: dataUrl } });
+    } else {
+      content.push({
+        type: "text",
+        text: `[Image ${safeName(file.name)} could not be read (download failed)]`,
+      });
+    }
+  }
+  return content;
 };
 
 // file list + as much file content as the budget allows (focus files first)

@@ -79,10 +79,8 @@ export const runCoderAgent = async ({
     focus: new Set(plan.files),
   });
 
-  // with images and a vision model the user message becomes a content array
-  const allowImages = Boolean(process.env.VISION_MODEL);
-  const useVision = allowImages && attachments.some((file) => file.type === "image");
-  const userContent = buildUserContent(request, attachments, allowImages, docContext);
+  // the coder works on text only: images arrive as the vision model description
+  const userContent = await buildUserContent(request, attachments, false, docContext);
 
   const userText = [
     `MODE: ${plan.mode.toUpperCase()}`,
@@ -98,16 +96,11 @@ export const runCoderAgent = async ({
 
   const codeMessages = [
     { role: "system", content: CODER_PROMPT },
-    {
-      role: "user",
-      content: useVision
-        ? [{ type: "text", text: userText }, ...userContent.slice(1)]
-        : userText,
-    },
+    { role: "user", content: userText },
   ];
 
   const coded = await runFileStream({
-    model: pickModel("coder", useVision),
+    model: pickModel("coder"),
     messages: codeMessages,
     maxTokens: limits().coder,
     signal,

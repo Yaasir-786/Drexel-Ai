@@ -5,6 +5,7 @@ import cloudinaryService from "../../middleware/cloudinaryMiddleware.js";
 import Document from "../../models/documentModel.js";
 import DocChunk from "../../models/docChunkModel.js";
 import { stripReservedTags } from "../../agents/prompts.js";
+import { analyzeImage } from "../../agents/imageAnalyzer.js";
 
 const MAX_PDF_TEXT = 15000;
 
@@ -161,7 +162,13 @@ const uploadFiles = async (req, res) => {
     }
 
     const publicId = `delux_${req.user._id}_${crypto.randomUUID()}`;
-    const text = file.kind === "pdf" ? await extractPdfText(file.buffer) : undefined;
+    // pdfs keep their extracted text, images keep the local OCR + color analysis
+    const text =
+      file.kind === "pdf"
+        ? await extractPdfText(file.buffer)
+        : file.kind === "image"
+          ? await analyzeImage(file.buffer)
+          : undefined;
 
     const uploaded = await cloudinaryService.uploadToCloudinary(file.buffer, {
       public_id: publicId,

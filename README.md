@@ -285,12 +285,15 @@ MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret
 JWT_EXPIRES_IN=1d
 
-# LLM provider
-LLM_BASE_URL=your_llm_url
-LLM_API_KEY=your_llm_api_key
-PLANNER_MODEL=your_llm_model
-CODER_MODEL=your_llm_model
+# LLM provider (Google Gemini, OpenAI-compatible endpoint)
+LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+LLM_API_KEY=your_gemini_api_key
+PLANNER_MODEL=gemini-3.5-flash-lite
+CODER_MODEL=gemini-3.6-flash
 LLM_REASONING_EFFORT=medium
+# Groq instead of Gemini: LLM_BASE_URL=https://api.groq.com/openai/v1
+#   PLANNER_MODEL=llama-3.1-8b-instant
+#   CODER_MODEL=llama-3.3-70b-versatile
 
 # Optional limits
 CHAT_MAX_TOKENS=4000
@@ -329,7 +332,9 @@ MAX_ZIP_MB=50
 | `IMAGE_MODEL` | – | Cloudflare Workers AI model that generates the images |
 | `IMAGE_CREDITS` | `5` | Credits charged per generated image |
 | `IMAGE_DAILY_LIMIT` | `10` | Images one user can generate per day (admins are unlimited) |
-| `VISION_MODEL` | – | Vision model for reading attached images; empty = image understanding off |
+| `VISION_MODEL` | – | Vision model for image description only (the agents stay on text models); empty = image understanding off |
+| `VISION_MAX_TOKENS` | `900` | Token budget for one image description call |
+| `VISION_REASONING_EFFORT` | `low` | Reasoning effort of the vision call (Gemini 3 cannot turn thinking off, "none" is rejected) |
 | `MAX_ZIP_MB` | `50` | Maximum upload size of a zip project file |
 | `CHAT_MAX_TOKENS` | `4000` | Token budget for one chat reply |
 | `CHAT_REASONING_EFFORT` | `low` | Reasoning effort for chat replies (low = fast answers, fewer empty replies) |

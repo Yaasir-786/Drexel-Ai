@@ -25,6 +25,7 @@ import {
   buildUserContent,
   buildFilesContext,
 } from "../../agents/prompts.js";
+import { describeImages } from "../../agents/visionAgent.js";
 import {
   classifyIntent,
   runChatAgent,
@@ -194,7 +195,8 @@ const streamAgent = async (req, res) => {
       : stripReservedTags(req.body.message);
   const errorLog = stripReservedTags(req.body.errorLog || "");
 
-  const allowImages = Boolean(process.env.VISION_MODEL);
+  // the vision model only describes images; every agent stays on a text model
+  const allowImages = false;
   const hasImages = attachments.some((file) => file.type === "image");
 
   // rebuild the content of the last 2 user messages that have attachments, so
@@ -211,23 +213,25 @@ const streamAgent = async (req, res) => {
     }
   }
 
-  const mappedHistory = recentMessages.map((item, index) => {
-    // keep up to 8000 chars per message, so code blocks stay complete
-    if (rebuildIndexes.has(index)) {
+  const mappedHistory = await Promise.all(
+    recentMessages.map(async (item, index) => {
+      // keep up to 8000 chars per message, so code blocks stay complete
+      if (rebuildIndexes.has(index)) {
+        return {
+          role: "user",
+          content: await buildUserContent(
+            item.content.slice(0, 8000),
+            item.attachments,
+            allowImages,
+          ),
+        };
+      }
       return {
-        role: "user",
-        content: buildUserContent(
-          item.content.slice(0, 8000),
-          item.attachments,
-          allowImages,
-        ),
+        role: item.role,
+        content: item.content.slice(0, 8000),
       };
-    }
-    return {
-      role: item.role,
-      content: item.content.slice(0, 8000),
-    };
-  });
+    }),
+  );
 
   // cap the whole history at about 24000 chars, dropping the oldest first
   let historyTotal = mappedHistory.reduce(
@@ -240,12 +244,6 @@ const streamAgent = async (req, res) => {
     historyStart += 1;
   }
   const history = mappedHistory.slice(historyStart);
-
-  // the chat/planner models need vision when the recent history contains images
-  const historyHasImages = history.some((entry) =>
-    Array.isArray(entry.content),
-  );
-  const useVision = (hasImages || historyHasImages) && allowImages;
 
   // zip attachments: document ids from the message and the last 2 user messages
   const currentDocIds = [
@@ -305,7 +303,7 @@ const streamAgent = async (req, res) => {
     userId: req.user._id,
   });
 
-  let userContent = buildUserContent(message, attachments, allowImages, docContext);
+  let userContent = await buildUserContent(message, attachments, allowImages, docContext);
 
   // website links of this message, filled after the stream opens
   let linkAttachments = [];
@@ -419,6 +417,51 @@ const streamAgent = async (req, res) => {
         } else {
           userContent += `\n\n${wrapped}`;
         }
+      }
+    }
+
+    // image attachments: local analysis (OCR + colors) and an optional vision description
+    const imageFiles = attachments.filter((file) => file.type === "image");
+    if (imageFiles.length > 0 && !signal.aborted) {
+      // the analysis travels on attachment.text from the upload
+      const analysis = imageFiles
+        .map((file) => file.text)
+        .filter(Boolean)
+        .join("\n\n");
+      if (analysis) {
+        const analysisNote =
+          `<untrusted_document name="image analysis">\n` +
+          `${stripReservedTags(analysis)}\n</untrusted_document>`;
+        if (Array.isArray(userContent)) {
+          userContent.push({ type: "text", text: analysisNote });
+        } else {
+          userContent += `\n\n${analysisNote}`;
+        }
+      }
+
+      if (process.env.VISION_MODEL) {
+        send("status", { agent: "planner", message: "Looking at the image..." });
+        const described = await describeImages({
+          images: imageFiles,
+          message,
+          signal,
+        });
+
+        // the description is data like every other attachment
+        const note =
+          `<untrusted_document name="image description">\n` +
+          `${stripReservedTags(described.text)}\n</untrusted_document>`;
+        if (Array.isArray(userContent)) {
+          userContent.push({ type: "text", text: note });
+        } else {
+          userContent += `\n\n${note}`;
+        }
+
+        // follow-up messages reuse analysis + description via attachment.text (db cap: 15000)
+        const combined = analysis
+          ? `${analysis}\n\nVISUAL DESCRIPTION: ${described.text}`
+          : `VISUAL DESCRIPTION: ${described.text}`;
+        for (const file of imageFiles) file.text = combined.slice(0, 12000);
       }
     }
 
@@ -580,7 +623,6 @@ const streamAgent = async (req, res) => {
           history,
           content: userContent,
           filesContext: buildFilesContext(runFiles, { budget: 6000 }),
-          useVision,
           signal,
           onText: (text) =>
             send("token", { agent: "planner", phase: "chat", text }),
@@ -644,7 +686,6 @@ const streamAgent = async (req, res) => {
           history,
           filesContext: buildFilesContext(runFiles, { budget: 6000 }),
           hasFiles,
-          useVision,
           signal,
         });
         plan = planned.plan;

@@ -1,4 +1,5 @@
 import { MAX_ZIP_SIZE } from "./fileUploadMiddleware.js";
+import { safeErrorText } from "../agents/llmClient.js";
 
 const notFound = (req, res) => {
   res.status(404).json({ message: "Route Not Found..." });
@@ -35,6 +36,9 @@ const errorHandler = (err, req, res, next) => {
   } else if (statusCode === 500 && err.status >= 400 && err.status < 500) {
     statusCode = err.status;
   }
+
+  // provider ids and keys never reach the client
+  message = safeErrorText(message);
 
   // never leak internal error details in production
   if (statusCode === 500 && process.env.NODE_ENV === "production") {

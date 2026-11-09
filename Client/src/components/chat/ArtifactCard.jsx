@@ -7,7 +7,6 @@ export default function ArtifactCard({
   files = [],
   preview = true,
   onOpen,
-  onDownloadZip,
 }) {
   if (!files || files.length === 0) return null;
 
@@ -45,14 +44,6 @@ export default function ArtifactCard({
           >
             Code
           </Button>
-          <Button
-            variant="secondary"
-            onClick={() => onDownloadZip && onDownloadZip()}
-            className="h-8 px-3 text-xs"
-            icon={Download}
-          >
-            Download ZIP
-          </Button>
         </div>
       </div>
     );
@@ -72,16 +63,6 @@ export default function ArtifactCard({
             </p>
           </div>
         </div>
-        {files.length > 1 && (
-          <Button
-            variant="secondary"
-            onClick={() => onDownloadZip && onDownloadZip()}
-            className="h-7 px-2.5 text-xs"
-            icon={Download}
-          >
-            Download all (ZIP)
-          </Button>
-        )}
       </div>
 
       <div className="flex flex-col divide-y divide-line/60 border border-line rounded-xl overflow-hidden bg-surface">

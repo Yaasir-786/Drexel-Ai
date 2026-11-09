@@ -26,9 +26,9 @@ import { mapMessages } from "../services/projectService";
 import uploadService from "../services/uploadService";
 import ArtifactCard from "../components/chat/ArtifactCard";
 import ArtifactPanel from "../components/chat/ArtifactPanel";
-import { downloadZip } from "../utils/downloadFiles";
 import { getProfile } from "../features/auth/authSlice";
 import { createTypewriter } from "../utils/typewriter";
+import { pasteFiles } from "../utils/clipboardFiles";
 import RunStatus from "../components/RunStatus";
 import PromptGlow from "../components/PromptGlow";
 import Greeting from "../components/Greeting";
@@ -123,9 +123,8 @@ export default function Chat() {
   }, [messages, isGenerating]);
 
   // validate and keep the real File objects for the upload (zips index right away)
-  const handleFileSelect = (e) => {
-    const selected = Array.from(e.target.files || []);
-    e.target.value = "";
+  const addFiles = (fileList) => {
+    const selected = Array.from(fileList || []);
     if (!selected.length) return;
 
     const allowed = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
@@ -185,6 +184,18 @@ export default function Chat() {
           toast.error(`${entry.name}: could not index the ZIP file`);
         });
     });
+  };
+
+  // file picker: add the selected files and reset the input
+  const handleFileSelect = (e) => {
+    addFiles(e.target.files);
+    e.target.value = "";
+  };
+
+  // Ctrl/Cmd+V: paste files (no plain text on the clipboard) as attachments
+  const handlePaste = async (event) => {
+    const files = await pasteFiles(event);
+    if (files.length > 0) addFiles(files);
   };
 
   const handleRemoveAttachment = (id) => {
@@ -300,8 +311,8 @@ export default function Chat() {
             setProcessingStatus(
               /review/i.test(data.message) ? "Reviewing changes…" : /coder|code/i.test(data.message) ? "Generating code…" : "Thinking…"
             );
-            // image generation: show a shimmer placeholder in the chat
-            if (/image/i.test(data.message)) {
+            // image GENERATION: shimmer box in the chat (reading an image has no box)
+            if (/image/i.test(data.message) && /creating|generating/i.test(data.message)) {
               setMessages((prev) =>
                 prev.some((m) => m.type === "image-loading")
                   ? prev
@@ -706,7 +717,6 @@ export default function Chat() {
                                 setArtifactChatId(id);
                                 setArtifactPanelOpen(true);
                               }}
-                              onDownloadZip={() => downloadZip(files, chatTitle)}
                             />
                           </div>
                         )}
@@ -781,6 +791,7 @@ export default function Chat() {
                     handleSendPrompt();
                   }
                 }}
+                onPaste={handlePaste}
                 placeholder="Message Drexel AI... (Ask for code snippets, programming questions, or app concepts)"
                 className="w-full bg-transparent font-serif text-ink text-base outline-none resize-none leading-relaxed placeholder:text-muted field-sizing-content max-h-40 overflow-y-auto"
               />

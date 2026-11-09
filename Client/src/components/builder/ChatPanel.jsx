@@ -20,6 +20,7 @@ import ChatImage from '../chat/ChatImage';
 import ZipCard from '../chat/ZipCard';
 import UserMessage from '../chat/UserMessage';
 import uploadService from '../../services/uploadService';
+import { pasteFiles } from '../../utils/clipboardFiles';
 
 // unique id for attachment chips
 const newId = () => Date.now() + '-' + Math.random().toString(36).slice(2, 8);
@@ -71,9 +72,8 @@ export default function ChatPanel({
   };
 
   // validate and keep the real File objects for the upload (zips index right away)
-  const handleFileSelect = (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = '';
+  const addFiles = (fileList) => {
+    const files = Array.from(fileList || []);
     if (!files.length) return;
 
     const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
@@ -133,6 +133,18 @@ export default function ChatPanel({
           toast.error(`${entry.name}: could not index the ZIP file`);
         });
     });
+  };
+
+  // file picker: add the selected files and reset the input
+  const handleFileSelect = (e) => {
+    addFiles(e.target.files);
+    e.target.value = '';
+  };
+
+  // Ctrl/Cmd+V: paste files (no plain text on the clipboard) as attachments
+  const handlePaste = async (event) => {
+    const files = await pasteFiles(event);
+    if (files.length > 0) addFiles(files);
   };
 
   const handleRemoveAttachment = (id) => {
@@ -321,6 +333,7 @@ export default function ChatPanel({
               handleSend(e);
             }
           }}
+          onPaste={handlePaste}
           placeholder={
             mode === 'Chat'
               ? 'Ask any programming question or request a code snippet...'
