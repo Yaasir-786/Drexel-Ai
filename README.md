@@ -286,14 +286,11 @@ JWT_SECRET=your_jwt_secret
 JWT_EXPIRES_IN=1d
 
 # LLM provider (Google Gemini, OpenAI-compatible endpoint)
-LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-LLM_API_KEY=your_gemini_api_key
-PLANNER_MODEL=gemini-3.5-flash-lite
-CODER_MODEL=gemini-3.6-flash
+LLM_BASE_URL=your_llm_base_url
+LLM_API_KEY=your_api_key
+PLANNER_MODEL=your_planner_model
+CODER_MODEL=your_coder_model
 LLM_REASONING_EFFORT=medium
-# Groq instead of Gemini: LLM_BASE_URL=https://api.groq.com/openai/v1
-#   PLANNER_MODEL=llama-3.1-8b-instant
-#   CODER_MODEL=llama-3.3-70b-versatile
 
 # Optional limits
 CHAT_MAX_TOKENS=4000
