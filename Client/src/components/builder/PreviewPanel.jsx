@@ -6,6 +6,26 @@ import Button from "../Button";
 // vite-react template keeps its own tested package.json / vite config; we only add the extra libraries
 const getPreviewType = (files) => (files["/src/main.jsx"] ? "react" : files["/index.html"] ? "static" : "none");
 
+// scrollbar style for the preview iframe only, never in saved or downloaded files
+const SCROLLBAR_CSS =
+  '<style data-drexel-scrollbar>' +
+  "::-webkit-scrollbar{width:10px;height:10px}" +
+  "::-webkit-scrollbar-track{background:transparent}" +
+  "::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#0099FF,#6D5DFC);border-radius:9999px;border:2px solid transparent;background-clip:padding-box}" +
+  "@supports (-moz-appearance:none){html{scrollbar-width:thin;scrollbar-color:#6D5DFC transparent}}" +
+  "</style>";
+
+// inject the scrollbar style into the preview copy of /index.html
+const injectScrollbarCss = (files) => {
+  const index = files["/index.html"];
+  if (typeof index !== "string" || !index.includes("</head>")) return files;
+  if (index.includes("data-drexel-scrollbar")) return files;
+  return {
+    ...files,
+    "/index.html": index.replace("</head>", `${SCROLLBAR_CSS}</head>`),
+  };
+};
+
 const SAFE_VERSIONS = { "react-router-dom": "6.22.3", "lucide-react": "0.383.0" };
 const IMPORT_RE = /(?:from|import)\s*["']([^"'./][^"']*)["']/g;
 const getPackageName = (specifier) => (specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]);
@@ -27,18 +47,48 @@ const buildPreviewSetup = (files) => {
   return { files: rest, dependencies };
 };
 
-function SandpackContent({ onFixError }) {
+// virtual viewport range: full width renders 1280px (desktop), narrowest renders 375px (mobile)
+const DESKTOP_PREVIEW_WIDTH = 1280;
+const MOBILE_PREVIEW_WIDTH = 375;
+
+function SandpackContent({ onFixError, ratio = 1 }) {
   const { sandpack } = useSandpack();
   const errorMessage = sandpack.error?.message;
+  const containerRef = React.useRef(null);
+  const [containerWidth, setContainerWidth] = React.useState(0);
+
+  // measure the panel so the preview can render at its virtual width and scale down
+  React.useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return undefined;
+    const observer = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0]?.contentRect?.width || 0);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  // virtual viewport of the site: desktop at ratio 1, mobile at ratio 0
+  const virtualWidth = MOBILE_PREVIEW_WIDTH + ratio * (DESKTOP_PREVIEW_WIDTH - MOBILE_PREVIEW_WIDTH);
+  const scale = containerWidth ? Math.min(1, containerWidth / virtualWidth) : 1;
 
   return (
-    <div className="h-full flex flex-col relative">
-      <div className="flex-1 min-h-0">
-        <SandpackPreview
-          showOpenInCodeSandbox={false}
-          showRefreshButton={false}
-          style={{ width: "100%", height: "100%" }}
-        />
+    <div ref={containerRef} className="h-full flex flex-col relative">
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <div
+          style={{
+            width: containerWidth ? containerWidth / scale : "100%",
+            height: `${100 / scale}%`,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
+        >
+          <SandpackPreview
+            showOpenInCodeSandbox={false}
+            showRefreshButton={false}
+            style={{ width: "100%", height: "100%" }}
+          />
+        </div>
       </div>
 
       {errorMessage && (
@@ -60,8 +110,9 @@ function SandpackContent({ onFixError }) {
   );
 }
 
-export default function PreviewPanel({ files = {}, onFixError, isNew = false }) {
-  const setup = useMemo(() => buildPreviewSetup(files), [files]);
+export default function PreviewPanel({ files = {}, onFixError, isNew = false, ratio = 1 }) {
+  const previewFiles = useMemo(() => injectScrollbarCss(files), [files]);
+  const setup = useMemo(() => buildPreviewSetup(previewFiles), [previewFiles]);
   const type = getPreviewType(files);
 
   if (isNew || !files || Object.keys(files).length === 0) {
@@ -92,10 +143,10 @@ export default function PreviewPanel({ files = {}, onFixError, isNew = false }) 
       <div className="h-full flex flex-col bg-surface overflow-hidden">
         <SandpackProvider
           template="static"
-          files={files}
+          files={previewFiles}
           options={{ recompileMode: "delayed", recompileDelay: 500 }}
           style={{ height: "100%", width: "100%" }}>
-          <SandpackContent onFixError={onFixError} />
+          <SandpackContent onFixError={onFixError} ratio={ratio} />
         </SandpackProvider>
       </div>
     );
@@ -111,7 +162,7 @@ export default function PreviewPanel({ files = {}, onFixError, isNew = false }) 
         options={{ recompileMode: "delayed", recompileDelay: 500 }}
         style={{ height: "100%", width: "100%" }}
       >
-        <SandpackContent onFixError={onFixError} />
+        <SandpackContent onFixError={onFixError} ratio={ratio} />
       </SandpackProvider>
     </div>
   );

@@ -1,18 +1,23 @@
 // Landing page: marketing overview with hero, mockup card, how it works, features, and footer
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React from "react";
+import { Link } from "react-router-dom";
 import {
   Sparkles,
   Bot,
   Code2,
   Eye,
   FileCode2,
-  FolderGit2,
+  ImagePlus,
   Download,
-} from 'lucide-react';
-import Logo from '../components/Logo';
-import ThemeToggle from '../components/ThemeToggle';
-import Button from '../components/Button';
+  Paperclip,
+  Send,
+  Moon,
+  Coffee,
+} from "lucide-react";
+import Logo from "../components/Logo";
+import ThemeToggle from "../components/ThemeToggle";
+import Button from "../components/Button";
+import Badge from "../components/Badge";
 
 export default function Landing() {
   return (
@@ -53,7 +58,8 @@ export default function Landing() {
             Describe it. Chat. Build.
           </h1>
           <p className="text-lg md:text-xl text-muted leading-relaxed">
-            Drexel-Ai turns your idea into a working React app with a Planner agent and a Coder agent.
+            Drexel-Ai turns your idea into a working React app with a Planner
+            agent and a Coder agent.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
             <Link to="/signup">
@@ -69,58 +75,156 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* Large Product Mockup Card (plain divs) */}
+        {/* Product mockup: Drexel chat (left) + live preview of the built site (right) */}
         <section className="bg-card border border-line rounded-2xl p-4 md:p-6 shadow-sm">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            {/* Left: Chat Bubbles */}
-            <div className="lg:col-span-5 border border-line rounded-xl bg-surface p-4 flex flex-col gap-3">
-              <div className="text-xs font-semibold text-muted uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                <Bot size={16} className="text-[#0099FF]" />
-                Agent Conversation
+            {/* Left: Drexel chat panel */}
+            <div className="lg:col-span-5 border border-line rounded-xl bg-surface flex flex-col min-h-[460px] overflow-hidden">
+              <div className="h-11 border-b border-line bg-card px-4 flex items-center gap-2 shrink-0">
+                <span className="text-xs font-semibold text-ink uppercase tracking-wider">
+                  Chat
+                </span>
+                <Badge variant="purple">Build</Badge>
               </div>
-              <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 rounded-xl p-3 text-xs text-ink">
-                <span className="font-semibold text-[#0099FF] block mb-1">Planner Agent</span>
-                Architected 4 components and setup standard navigation routes.
+
+              <div className="flex-1 p-4 flex flex-col gap-4 min-h-0">
+                <div className="self-end max-w-[85%] font-serif text-sm rounded-2xl rounded-tr-xs px-4 py-2.5 bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white">
+                  build a coffee shop landing page with a menu and an order
+                  button
+                </div>
+
+                <div className="flex gap-3 self-start max-w-[95%]">
+                  <img
+                    src="/drexel-logo.svg"
+                    alt="Drexel-Ai"
+                    draggable={false}
+                    className="w-8 h-8 shrink-0"
+                  />
+                  <div className="min-w-0 pt-1 font-serif text-sm text-ink leading-relaxed">
+                    <p>
+                      I have built a coffee shop landing page with a hero, menu
+                      cards and an order button.
+                    </p>
+                    <p className="mt-1.5 text-muted">
+                      Files: /index.html, /style.css, /script.js
+                    </p>
+                  </div>
+                </div>
+
+                <div className="self-end max-w-[85%] font-serif text-sm rounded-2xl rounded-tr-xs px-4 py-2.5 bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white">
+                  make the order button orange and add a dark mode toggle
+                </div>
+
+                <div className="flex gap-3 self-start max-w-[95%]">
+                  <img
+                    src="/drexel-logo.svg"
+                    alt="Drexel-Ai"
+                    draggable={false}
+                    className="w-8 h-8 shrink-0"
+                  />
+                  <div className="min-w-0 pt-1 font-serif text-sm text-ink leading-relaxed">
+                    <p>
+                      Done. The button is orange now and the header has a dark
+                      mode toggle.
+                    </p>
+                    <p className="mt-1.5 text-muted">
+                      Files: /style.css, /script.js
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="bg-[#0099FF] text-white rounded-xl p-3 text-xs self-end max-w-[85%]">
-                Add a dark mode toggle button in the header.
-              </div>
-              <div className="bg-card border border-line rounded-xl p-3 text-xs text-ink">
-                <span className="font-semibold text-purple-600 dark:text-purple-400 block mb-1">Coder Agent</span>
-                Created ThemeToggle component and applied theme variables.
+
+              {/* Prompt box like the Builder chat */}
+              <div className="p-3 border-t border-line bg-card shrink-0 flex flex-col gap-2">
+                <div className="w-full p-2.5 font-serif text-sm rounded-xl border border-line bg-surface text-muted">
+                  Describe changes or application to build...
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg border border-line text-muted flex items-center justify-center">
+                      <Paperclip size={14} />
+                    </div>
+                    <div className="flex rounded-xl bg-surface border border-line p-0.5 text-xs font-medium">
+                      <span className="px-3 py-1 text-muted">Chat</span>
+                      <span className="px-3 py-1 rounded-lg bg-primary-gradient text-white">
+                        Build
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-8 px-3 rounded-xl bg-primary-gradient text-white text-xs font-medium inline-flex items-center gap-1.5">
+                    <Send size={13} />
+                    Send
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Right: Browser Frame with simple placeholder blocks */}
-            <div className="lg:col-span-7 border border-line rounded-xl bg-card overflow-hidden flex flex-col">
-              <div className="h-9 bg-surface border-b border-line px-3 flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                <div className="ml-2 px-3 py-0.5 rounded-md bg-card border border-line text-[11px] text-muted flex-1 text-center font-mono">
-                  localhost:5173/preview
+            {/* Right: Preview panel with the built site */}
+            <div className="lg:col-span-7 border border-line rounded-xl bg-card overflow-hidden flex flex-col min-h-[460px]">
+              <div className="h-11 border-b border-line bg-card px-4 flex items-center justify-between shrink-0">
+                <div className="flex rounded-xl bg-surface border border-line p-0.5 text-xs font-medium">
+                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-card border border-line/60 text-ink font-semibold">
+                    <Eye size={14} className="text-[#0099FF]" />
+                    Preview
+                  </span>
+                  <span className="flex items-center gap-1.5 px-3 py-1 text-muted">
+                    <Code2 size={14} className="text-purple-500" />
+                    Code
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="text-[11px] text-muted font-mono">
+                    Sandbox Live
+                  </span>
                 </div>
               </div>
-              <div className="p-5 flex-1 flex flex-col gap-4">
-                <div className="h-8 bg-surface rounded-lg w-1/3 border border-line" />
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="h-20 bg-surface rounded-xl border border-line p-3 flex flex-col justify-between">
-                    <div className="w-6 h-6 rounded-lg bg-blue-500/20" />
-                    <div className="h-2 bg-line rounded w-3/4" />
+
+              {/* Built site (plain divs) */}
+              <div className="flex-1 bg-[#150f0a] text-white flex flex-col">
+                <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-bold">
+                    <Coffee size={16} className="text-orange-400" />
+                    Brew &amp; Co
                   </div>
-                  <div className="h-20 bg-surface rounded-xl border border-line p-3 flex flex-col justify-between">
-                    <div className="w-6 h-6 rounded-lg bg-purple-500/20" />
-                    <div className="h-2 bg-line rounded w-2/3" />
-                  </div>
-                  <div className="h-20 bg-surface rounded-xl border border-line p-3 flex flex-col justify-between">
-                    <div className="w-6 h-6 rounded-lg bg-emerald-500/20" />
-                    <div className="h-2 bg-line rounded w-1/2" />
+                  <div className="flex items-center gap-4 text-[11px] text-white/60">
+                    <span className="hidden sm:inline">Menu</span>
+                    <span className="hidden sm:inline">About</span>
+                    <span className="hidden sm:inline">Contact</span>
+                    <span className="p-1.5 rounded-full bg-white/10 text-white">
+                      <Moon size={12} />
+                    </span>
                   </div>
                 </div>
-                <div className="h-32 bg-surface rounded-xl border border-line p-4 flex flex-col gap-2">
-                  <div className="h-3 bg-line rounded w-1/4" />
-                  <div className="h-2 bg-line rounded w-full" />
-                  <div className="h-2 bg-line rounded w-5/6" />
+
+                <div className="px-5 py-8 text-center flex flex-col items-center gap-2">
+                  <h4 className="text-xl md:text-2xl font-bold tracking-tight">
+                    Fresh coffee, made your way.
+                  </h4>
+                  <p className="text-[11px] md:text-xs text-white/60 max-w-xs">
+                    Small batch roasts, brewed daily and ready when you are.
+                  </p>
+                  <span className="mt-2 px-4 py-1.5 rounded-lg bg-orange-500 text-xs font-semibold">
+                    Order now
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 px-5 pb-5 mt-auto">
+                  <div className="rounded-xl bg-white/5 border border-white/10 p-3 flex flex-col gap-2">
+                    <div className="h-10 rounded-lg bg-amber-700/40" />
+                    <span className="text-xs font-semibold">Espresso</span>
+                    <span className="text-[11px] text-orange-400">$3.50</span>
+                  </div>
+                  <div className="rounded-xl bg-white/5 border border-white/10 p-3 flex flex-col gap-2">
+                    <div className="h-10 rounded-lg bg-orange-700/40" />
+                    <span className="text-xs font-semibold">Latte</span>
+                    <span className="text-[11px] text-orange-400">$4.50</span>
+                  </div>
+                  <div className="rounded-xl bg-white/5 border border-white/10 p-3 flex flex-col gap-2">
+                    <div className="h-10 rounded-lg bg-stone-600/40" />
+                    <span className="text-xs font-semibold">Cold Brew</span>
+                    <span className="text-[11px] text-orange-400">$5.00</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -143,7 +247,8 @@ export default function Landing() {
                 Planner Agent plans your project
               </h3>
               <p className="text-sm text-muted">
-                Breaks down your requirements into actionable architecture and component steps.
+                Breaks down your requirements into actionable architecture and
+                component steps.
               </p>
             </div>
 
@@ -155,7 +260,8 @@ export default function Landing() {
                 Coder Agent writes, reviews and fixes the code
               </h3>
               <p className="text-sm text-muted">
-                Synthesizes complete, production-ready React code and tests for syntax issues.
+                Synthesizes complete, production-ready React code and tests for
+                syntax issues.
               </p>
             </div>
 
@@ -167,7 +273,8 @@ export default function Landing() {
                 See live preview and download the ZIP
               </h3>
               <p className="text-sm text-muted">
-                Interact with the rendered application immediately and export clean source files.
+                Interact with the rendered application immediately and export
+                clean source files.
               </p>
             </div>
           </div>
@@ -185,24 +292,39 @@ export default function Landing() {
               <div className="text-[#0099FF] mb-1">
                 <Sparkles size={20} />
               </div>
-              <h3 className="text-base font-semibold text-ink">Chat and Build modes</h3>
-              <p className="text-sm text-muted">Switch seamlessly between conversational planning and direct code editing.</p>
+              <h3 className="text-base font-semibold text-ink">
+                Chat and Build modes
+              </h3>
+              <p className="text-sm text-muted">
+                Switch seamlessly between conversational planning and direct
+                code editing.
+              </p>
             </div>
 
             <div className="bg-card border border-line rounded-2xl p-6 flex flex-col gap-2">
               <div className="text-[#0099FF] mb-1">
                 <Code2 size={20} />
               </div>
-              <h3 className="text-base font-semibold text-ink">Live code streaming</h3>
-              <p className="text-sm text-muted">Watch file generation stream line by line with realtime status badges.</p>
+              <h3 className="text-base font-semibold text-ink">
+                Live code streaming
+              </h3>
+              <p className="text-sm text-muted">
+                Watch file generation stream line by line with realtime status
+                badges.
+              </p>
             </div>
 
             <div className="bg-card border border-line rounded-2xl p-6 flex flex-col gap-2">
               <div className="text-[#0099FF] mb-1">
                 <FileCode2 size={20} />
               </div>
-              <h3 className="text-base font-semibold text-ink">File tree and code editor</h3>
-              <p className="text-sm text-muted">Browse directory hierarchy and modify code directly in the integrated editor.</p>
+              <h3 className="text-base font-semibold text-ink">
+                File tree and code editor
+              </h3>
+              <p className="text-sm text-muted">
+                Browse directory hierarchy and modify code directly in the
+                integrated editor.
+              </p>
             </div>
 
             <div className="bg-card border border-line rounded-2xl p-6 flex flex-col gap-2">
@@ -210,15 +332,23 @@ export default function Landing() {
                 <Eye size={20} />
               </div>
               <h3 className="text-base font-semibold text-ink">Live preview</h3>
-              <p className="text-sm text-muted">Test the interactive user interface rendered right inside your browser window.</p>
+              <p className="text-sm text-muted">
+                Test the interactive user interface rendered right inside your
+                browser window.
+              </p>
             </div>
 
             <div className="bg-card border border-line rounded-2xl p-6 flex flex-col gap-2">
               <div className="text-[#0099FF] mb-1">
-                <FolderGit2 size={20} />
+                <ImagePlus size={20} />
               </div>
-              <h3 className="text-base font-semibold text-ink">Version history</h3>
-              <p className="text-sm text-muted">Restore your code repository to any prior checkpoint with one click.</p>
+              <h3 className="text-base font-semibold text-ink">
+                Image generation and editing
+              </h3>
+              <p className="text-sm text-muted">
+                Generate images right in the chat, then edit or download them in
+                one click.
+              </p>
             </div>
 
             <div className="bg-card border border-line rounded-2xl p-6 flex flex-col gap-2">
@@ -226,7 +356,10 @@ export default function Landing() {
                 <Download size={20} />
               </div>
               <h3 className="text-base font-semibold text-ink">ZIP download</h3>
-              <p className="text-sm text-muted">Export self-contained Vite and React projects ready for deployment.</p>
+              <p className="text-sm text-muted">
+                Export self-contained Vite and React projects ready for
+                deployment.
+              </p>
             </div>
           </div>
         </section>

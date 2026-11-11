@@ -9,6 +9,7 @@ export default function ArtifactPanel({
   tab = "preview",
   file = null,
   title = "Project",
+  ratio = 1,
   onClose,
   onFixError,
 }) {
@@ -22,7 +23,10 @@ export default function ArtifactPanel({
     : title;
 
   return (
-    <div className="fixed inset-0 z-50 lg:static lg:w-[50%] lg:shrink-0 lg:border-l border-line bg-card text-ink flex flex-col h-full overflow-hidden">
+    <div
+      style={{ "--panel-w": `calc(360px + (100% - 780px) * ${ratio})` }}
+      className="fixed inset-0 z-50 lg:static lg:w-[var(--panel-w)] lg:shrink-0 lg:min-w-0 lg:border-l border-line bg-card text-ink flex flex-col h-full overflow-hidden"
+    >
       {/* Header */}
       <div className="h-14 border-b border-line px-4 flex items-center justify-between shrink-0 bg-surface/50">
         <div className="flex items-center gap-3 min-w-0">
@@ -75,7 +79,7 @@ export default function ArtifactPanel({
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-hidden bg-surface">
               <div className={activeTab === "preview" ? "h-full" : "hidden"}>
-                <PreviewPanel files={map} onFixError={onFixError} />
+                <PreviewPanel files={map} ratio={ratio} onFixError={onFixError} />
               </div>
               <div className={activeTab === "code" ? "h-full" : "hidden"}>
                 <CodePanel

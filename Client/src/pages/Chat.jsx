@@ -26,6 +26,8 @@ import { mapMessages } from "../services/projectService";
 import uploadService from "../services/uploadService";
 import ArtifactCard from "../components/chat/ArtifactCard";
 import ArtifactPanel from "../components/chat/ArtifactPanel";
+import ResizeHandle from "../components/ResizeHandle";
+import usePanelResize from "../hooks/usePanelResize";
 import { getProfile } from "../features/auth/authSlice";
 import { createTypewriter } from "../utils/typewriter";
 import { pasteFiles } from "../utils/clipboardFiles";
@@ -69,6 +71,12 @@ export default function Chat() {
   const [preview, setPreview] = useState(true);
   const [chatTitle, setChatTitle] = useState("New chat");
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
+  // resizable artifact panel (ratio 1 = full width)
+  const {
+    containerRef,
+    ratio: panelRatio,
+    onPointerDown: onResizeStart,
+  } = usePanelResize({ open: artifactPanelOpen });
   const [artifactChatId, setArtifactChatId] = useState(null);
   const [artifactFile, setArtifactFile] = useState(null);
 
@@ -554,9 +562,9 @@ export default function Chat() {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex min-w-0 lg:pl-[320px] h-screen overflow-hidden">
+      <div ref={containerRef} className="flex-1 flex min-w-0 lg:pl-[320px] h-screen overflow-hidden">
         {/* Chat Stream Column */}
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 lg:min-w-[420px] h-full overflow-hidden">
           {/* Chat Header */}
           <header className="h-16 border-b border-line bg-card/80 backdrop-blur-md px-4 md:px-8 flex items-center justify-between shrink-0 sticky top-0 z-30">
             <div className="flex items-center gap-3">
@@ -857,21 +865,26 @@ export default function Chat() {
 
         {/* ArtifactPanel opens on the right */}
         {artifactPanelOpen && artifactChatId === id && files.length > 0 && (
-          <ArtifactPanel
-            files={files}
-            preview={preview}
-            tab="preview"
-            file={artifactFile}
-            title={chatTitle}
-            onClose={() => setArtifactPanelOpen(false)}
-            onFixError={(err) =>
-              runStream({
-                message: "The live preview shows an error. Find the cause and fix it.",
-                type: "fix",
-                errorLog: err,
-              })
-            }
-          />
+          <>
+            {/* Drag handle between chat and panel (desktop only) */}
+            <ResizeHandle onPointerDown={onResizeStart} />
+            <ArtifactPanel
+              files={files}
+              preview={preview}
+              tab="preview"
+              file={artifactFile}
+              title={chatTitle}
+              ratio={panelRatio}
+              onClose={() => setArtifactPanelOpen(false)}
+              onFixError={(err) =>
+                runStream({
+                  message: "The live preview shows an error. Find the cause and fix it.",
+                  type: "fix",
+                  errorLog: err,
+                })
+              }
+            />
+          </>
         )}
       </div>
     </div>

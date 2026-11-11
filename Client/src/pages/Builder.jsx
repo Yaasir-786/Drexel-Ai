@@ -10,6 +10,8 @@ import ChatPanel from '../components/builder/ChatPanel';
 import PreviewPanel from '../components/builder/PreviewPanel';
 import CodePanel from '../components/builder/CodePanel';
 import Sidebar from '../components/layout/Sidebar';
+import ResizeHandle from '../components/ResizeHandle';
+import usePanelResize from '../hooks/usePanelResize';
 import projectService, { mapMessages } from '../services/projectService';
 import agentService from '../services/agentService';
 import { getProfile } from '../features/auth/authSlice';
@@ -53,6 +55,13 @@ export default function Builder() {
 
   // Preview/Code workspace: closed by default, opened only from the Preview button
   const [showWorkspace, setShowWorkspace] = useState(false);
+  // resizable preview column (ratio 1 = full width)
+  const {
+    containerRef,
+    ratio: previewRatio,
+    previewStyle,
+    onPointerDown: onResizeStart,
+  } = usePanelResize({ open: showWorkspace });
 
   // Tab state: [preview | code]
   const [activeTab, setActiveTab] = useState('preview');
@@ -456,7 +465,7 @@ export default function Builder() {
 
       {/* Workspace Content */}
       <div className={activeTab === "preview" ? "h-full" : "hidden"}>
-        <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} onFixError={handleFixError} />
+        <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} ratio={previewRatio} onFixError={handleFixError} />
       </div>
       <div className={activeTab === "code" ? "h-full" : "hidden"}>
         <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} onSave={handleSaveFiles} isSaving={isSaving} />
@@ -497,17 +506,19 @@ export default function Builder() {
         />
 
         {/* Main Area: chat only by default, chat + workspace after Preview */}
-        <div className={`flex-1 flex min-h-0 overflow-hidden relative ${showWorkspace ? "" : "bg-card"}`}>
-          {/* Chat column: centered by default, fixed 420px beside the workspace */}
+        <div
+          ref={containerRef}
+          className={`flex-1 flex min-h-0 overflow-hidden relative ${showWorkspace ? "" : "bg-card"}`}
+        >
+          {/* Chat column: centered by default, fluid with a minimum beside the workspace */}
           <div
             className={`h-full min-w-0 ${
               showWorkspace
-                ? "hidden lg:block lg:w-[420px] shrink-0"
+                ? "hidden lg:block lg:flex-1 lg:min-w-[420px]"
                 : "w-full max-w-4xl mx-auto"
             }`}
           >
-            <ChatPanel
-              messages={messages}
+            <ChatPanel              messages={messages}
               onSendMessage={handleSendMessage}
               isGenerating={isGenerating}
               onStopGenerating={handleStopGenerating}
@@ -523,9 +534,17 @@ export default function Builder() {
             />
           </div>
 
-          {/* Workspace: full-screen overlay on mobile, right column on desktop */}
+          {/* Drag handle between chat and workspace (desktop only) */}
           {showWorkspace && (
-            <div className="fixed inset-0 z-50 bg-surface flex flex-col lg:static lg:flex-1 lg:z-auto lg:min-w-0">
+            <ResizeHandle onPointerDown={onResizeStart} />
+          )}
+
+          {/* Workspace: full-screen overlay on mobile, resizable right column on desktop */}
+          {showWorkspace && (
+            <div
+              style={previewStyle}
+              className="fixed inset-0 z-50 bg-surface flex flex-col lg:static lg:z-auto lg:w-[var(--panel-w)] lg:shrink-0 lg:min-w-0"
+            >
               {workspace}
             </div>
           )}
