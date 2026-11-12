@@ -8,7 +8,7 @@ import {
 import { FileStreamParser, isSafePath } from "./fileParser.js";
 
 // streams one LLM call, converts <file> tags into structured events
-const runFileStream = async ({ model, messages, maxTokens, signal, send, phase }) => {
+const runFileStream = async ({ model, messages, maxTokens, reasoningEffort, signal, send, phase }) => {
   const parser = new FileStreamParser();
   let text = "";
 
@@ -32,6 +32,7 @@ const runFileStream = async ({ model, messages, maxTokens, signal, send, phase }
     messages,
     maxTokens,
     temperature: 0.3,
+    reasoningEffort,
     signal,
     onDelta: (delta) => emit(parser.feed(delta)),
   });
@@ -39,13 +40,17 @@ const runFileStream = async ({ model, messages, maxTokens, signal, send, phase }
   const tail = parser.end();
   emit(tail);
 
+  const incomplete = tail.filter((e) => e.type === "file_incomplete").map((e) => e.path);
+
   return {
     files: parser.files,
     text: text.trim(),
-    incomplete: tail.filter((e) => e.type === "file_incomplete").map((e) => e.path),
+    incomplete,
     tokens: result.tokens,
     aborted: result.aborted,
-    truncated: result.finishReason === "length",
+    finishReason: result.finishReason,
+    // a file cut in the middle also means the answer hit the output limit
+    truncated: result.finishReason === "length" || incomplete.length > 0,
   };
 };
 
@@ -99,10 +104,11 @@ export const runCoderAgent = async ({
     { role: "user", content: userText },
   ];
 
-  const coded = await runFileStream({
+  let coded = await runFileStream({
     model: pickModel("coder"),
     messages: codeMessages,
     maxTokens: limits().coder,
+    reasoningEffort: process.env.CODER_REASONING_EFFORT || "low",
     signal,
     send,
     phase: "code",
@@ -110,6 +116,54 @@ export const runCoderAgent = async ({
 
   let tokens = coded.tokens;
   let reviewNote = "";
+
+  // cut off answer (nothing complete, or files cut in the middle): one retry that
+  // finishes only the missing files
+  if (!coded.aborted && (coded.files.length === 0 || coded.incomplete.length > 0)) {
+    console.log(
+      `CODER RETRY files=${coded.files.length} incomplete=${coded.incomplete.join(",")} finish=${coded.finishReason} maxTokens=${limits().coder}`,
+    );
+    send("status", { agent: "coder", message: "Coder is finishing the missing files..." });
+
+    // nothing complete: answer the whole project again; otherwise only the cut files
+    const retryMessage =
+      coded.files.length === 0
+        ? {
+            role: "user",
+            content:
+              'Your last answer contained no complete file. Answer again now with the complete project. Every file must be inside <file path="/path"> ... </file> tags and the code must stay compact. No text outside the tags except a one-line summary.',
+          }
+        : {
+            role: "user",
+            content:
+              `These files were cut off: ${coded.incomplete.join(", ")}. Write ONLY these files again, complete and compact (shorter code, no repeated rules), each inside <file path="/path"> ... </file>. Do not output the files below again; the new files must match them (same class names, ids and paths).\nALREADY WRITTEN FILES:\n` +
+              coded.files
+                .map((file) => `<file path="${file.path}">\n${file.content}\n</file>`)
+                .join("\n"),
+          };
+
+    const retry = await runFileStream({
+      model: pickModel("coder"),
+      messages: [...codeMessages, retryMessage],
+      maxTokens: limits().coder,
+      reasoningEffort: process.env.CODER_REASONING_EFFORT || "low",
+      signal,
+      send,
+      phase: "code",
+    });
+
+    // merge both calls: complete files only, the retry wins on the same path
+    const merged = new Map(coded.files.map((file) => [file.path, file.content]));
+    for (const file of retry.files) merged.set(file.path, file.content);
+    tokens += retry.tokens;
+    coded = {
+      ...retry,
+      files: [...merged].map(([path, content]) => ({ path, content })),
+      incomplete: retry.incomplete,
+      truncated: retry.truncated,
+      text: coded.text || retry.text,
+    };
+  }
 
   collectFiles(result, coded.files, warnings);
   coded.incomplete.forEach((path) =>
@@ -125,6 +179,7 @@ export const runCoderAgent = async ({
     reviewNote,
     tokens,
     aborted,
+    truncated: coded.truncated,
     warnings,
   });
 
@@ -174,6 +229,7 @@ export const runCoderAgent = async ({
       model: pickModel("coder"),
       messages: reviewMessages,
       maxTokens: limits().review,
+      reasoningEffort: process.env.CODER_REASONING_EFFORT || "low",
       signal,
       send,
       phase: "review",

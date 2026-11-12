@@ -8,7 +8,6 @@ import {
   Send,
   Paperclip,
   Menu,
-  Coins,
   Square,
   FolderPlus,
   X,
@@ -75,6 +74,7 @@ export default function Chat() {
   const {
     containerRef,
     ratio: panelRatio,
+    previewStyle,
     onPointerDown: onResizeStart,
   } = usePanelResize({ open: artifactPanelOpen });
   const [artifactChatId, setArtifactChatId] = useState(null);
@@ -347,6 +347,8 @@ export default function Chat() {
             toast.error(data.message);
             // remove a leftover image placeholder after a failed generation
             setMessages((prev) => prev.filter((m) => m.type !== "image-loading"));
+          } else if (event === "warning") {
+            toast(data.message);
           } else if (event === "title") {
             if (data.title) {
               setChatTitle(data.title);
@@ -393,7 +395,7 @@ export default function Chat() {
         return prev;
       });
 
-      if (doneData?.changedFiles && doneData.changedFiles.length > 0) {
+      if (doneData?.changedFiles?.length > 0) {
         await queryClient.invalidateQueries({ queryKey: ["chat", chatId] });
         const fresh = queryClient.getQueryData(["chat", chatId]);
         if (fresh?.preview !== false) {
@@ -567,28 +569,28 @@ export default function Chat() {
         <div className="flex-1 flex flex-col min-w-0 lg:min-w-[420px] h-full overflow-hidden">
           {/* Chat Header */}
           <header className="h-16 border-b border-line bg-card/80 backdrop-blur-md px-4 md:px-8 flex items-center justify-between shrink-0 sticky top-0 z-30">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <button
                 type="button"
                 onClick={() => setIsMobileMenuOpen(true)}
                 aria-label="Open sidebar menu"
-                className="lg:hidden p-2 rounded-xl text-muted hover:text-ink hover:bg-surface border border-line cursor-pointer">
+                className="lg:hidden p-2 rounded-xl text-muted hover:text-ink hover:bg-surface border border-line cursor-pointer shrink-0">
                 <Menu size={20} />
               </button>
 
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-base font-semibold text-ink">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="text-base font-semibold text-ink truncate">
                   {chatTitle}
                 </span>
-                <span className="text-sm text-muted hidden sm:inline">
+                <span className="text-sm text-muted hidden xl:inline truncate">
                   • General purpose code and chat
                 </span>
               </div>
             </div>
 
             {/* Right Header: Credits pill, Theme toggle, Avatar */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 shrink-0">
               {files.length > 0 && preview && !artifactPanelOpen && (
                 <Button
                   variant="secondary"
@@ -602,11 +604,6 @@ export default function Chat() {
                   Preview
                 </Button>
               )}
-
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-line bg-surface text-xs font-medium text-ink whitespace-nowrap">
-                <Coins size={14} className="text-[#0099FF] shrink-0" />
-                <span>{user?.credits ?? 0} credits</span>
-              </div>
 
               <ThemeToggle />
 
@@ -875,6 +872,7 @@ export default function Chat() {
               file={artifactFile}
               title={chatTitle}
               ratio={panelRatio}
+              previewStyle={previewStyle}
               onClose={() => setArtifactPanelOpen(false)}
               onFixError={(err) =>
                 runStream({

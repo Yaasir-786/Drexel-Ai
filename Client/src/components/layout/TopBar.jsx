@@ -1,6 +1,6 @@
-// TopBar component with responsive hamburger, credits pill, theme toggle, and avatar
+// TopBar component with responsive hamburger, theme toggle, and avatar
 import React from 'react';
-import { Menu, Coins } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import ThemeToggle from '../ThemeToggle';
 import { useSelector } from 'react-redux';
 
@@ -21,14 +21,8 @@ export default function TopBar({ onOpenMobileMenu }) {
         </button>
       </div>
 
-      {/* Right side: credits pill (ONE line), theme toggle, and avatar */}
+      {/* Right side: theme toggle and avatar */}
       <div className="flex items-center gap-3">
-        {/* Credits pill (strictly ONE line) */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-line bg-surface text-xs font-medium text-ink whitespace-nowrap">
-          <Coins size={14} className="text-[#0099FF] shrink-0" />
-          <span>{user?.credits ?? 0} credits</span>
-        </div>
-
         {/* 40x40 Theme toggle */}
         <ThemeToggle />
 

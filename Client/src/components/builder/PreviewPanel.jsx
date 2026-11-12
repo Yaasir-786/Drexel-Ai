@@ -52,10 +52,32 @@ const DESKTOP_PREVIEW_WIDTH = 1280;
 const MOBILE_PREVIEW_WIDTH = 375;
 
 function SandpackContent({ onFixError, ratio = 1 }) {
-  const { sandpack } = useSandpack();
-  const errorMessage = sandpack.error?.message;
+  const { sandpack, listen } = useSandpack();
   const containerRef = React.useRef(null);
   const [containerWidth, setContainerWidth] = React.useState(0);
+  const [runtimeError, setRuntimeError] = React.useState("");
+
+  // the Nodebox runtime reports nothing but console errors: capture them
+  React.useEffect(
+    () =>
+      listen((msg) => {
+        if (msg.type === "start") {
+          setRuntimeError("");
+          return;
+        }
+        if (msg.type !== "console") return;
+        const entry = (msg.log || []).find((item) => item.method === "error");
+        if (!entry) return;
+        const text = (entry.data || [])
+          .map((part) => (typeof part === "string" ? part : part?.message || ""))
+          .filter(Boolean)
+          .join(" ");
+        // bundler housekeeping is not a crashed app
+        if (!text || /clearScreenDown|favicon|DevTools/i.test(text)) return;
+        setRuntimeError(text.slice(0, 1000));
+      }),
+    [listen],
+  );
 
   // measure the panel so the preview can render at its virtual width and scale down
   React.useEffect(() => {
@@ -67,6 +89,9 @@ function SandpackContent({ onFixError, ratio = 1 }) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  // compile error or runtime console error: both get the red bar + "Fix with AI"
+  const errorMessage = sandpack.error?.message || runtimeError;
 
   // virtual viewport of the site: desktop at ratio 1, mobile at ratio 0
   const virtualWidth = MOBILE_PREVIEW_WIDTH + ratio * (DESKTOP_PREVIEW_WIDTH - MOBILE_PREVIEW_WIDTH);

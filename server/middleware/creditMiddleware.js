@@ -5,6 +5,11 @@ const todayKey = () => new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(
 
 const dailyLimit = () => Number(process.env.DAILY_CREDIT_LIMIT) || 100;
 
+// admins get a practically unlimited daily allowance (same as their seed credits)
+const ADMIN_DAILY_LIMIT = 1000000;
+
+const dailyLimitFor = (user) => (user.userType === "ADMIN" ? ADMIN_DAILY_LIMIT : dailyLimit());
+
 const dailyCredits = () => Number(process.env.DAILY_CREDITS) || 100;
 
 // 1 credit = 1000 tokens by default (CREDITS_PER_1K_TOKENS in .env)
@@ -27,7 +32,7 @@ const checkCredits = async (req, res, next) => {
   }
 
   const usedToday = user.dailyDate === todayKey() ? user.dailyUsed : 0;
-  if (usedToday >= dailyLimit()) {
+  if (usedToday >= dailyLimitFor(user)) {
     res.status(429);
     throw new Error("Daily Credit Limit Reached, Please Try Again Tomorrow...");
   }
@@ -92,6 +97,7 @@ const credit = {
   tokensToCredits,
   todayKey,
   dailyLimit,
+  dailyLimitFor,
   dailyCredits,
   refreshDaily,
   round2,

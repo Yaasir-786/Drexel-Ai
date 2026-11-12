@@ -142,9 +142,8 @@ export default function Builder() {
     let projectId = currentProjectId;
     let isCreated = false;
     let typer;
-
-    // remember if the project had files before, so only the first build auto-opens the preview
-    const hadFilesBefore = files.length > 0;
+    // file paths written in this run (covers the first build of a new project)
+    const writtenPaths = new Set();
 
     try {
       if (id === "new" || !projectId) {
@@ -239,6 +238,8 @@ export default function Builder() {
             ]);
           } else if (event === "file_start") {
             setIsWritingFiles(true);
+          } else if (event === "file_end") {
+            writtenPaths.add(data.path);
           } else if (event === "token") {
             typer.push(data.text);
           } else if (event === "credits") {
@@ -249,6 +250,8 @@ export default function Builder() {
             toast.error(data.message);
             // remove a leftover image placeholder after a failed generation
             setMessages((prev) => prev.filter((m) => m.type !== 'image-loading'));
+          } else if (event === "warning") {
+            toast(data.message);
           } else if (event === "done") {
             doneData = data;
           }
@@ -283,15 +286,15 @@ export default function Builder() {
       if (isCreated) {
         navigate(`/projects/${projectId}`, { replace: true });
       }
-      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      await queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["projectChat", projectId] });
 
-      // auto-open the workspace after the FIRST build of a new project (desktop only)
-      if (
-        !hadFilesBefore &&
-        doneData?.changedFiles?.length > 0 &&
-        window.innerWidth >= 1024
-      ) {
+      // auto-open the workspace after any build/edit that changed files and has
+      // a preview (same rule as getPreviewType), even if it was closed before
+      const allPaths = new Set([...files.map((f) => f.path), ...writtenPaths]);
+      const hasPreview =
+        allPaths.has("/src/main.jsx") || allPaths.has("/index.html");
+      if (doneData?.changedFiles?.length > 0 && hasPreview && window.innerWidth >= 1024) {
         setShowWorkspace(true);
       }
     } catch (error) {

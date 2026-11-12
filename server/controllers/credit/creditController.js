@@ -31,7 +31,7 @@ const getUsage = async (req, res) => {
   res.status(200).json({
     credits: credit.round2(user.credits),
     dailyUsed: credit.round2(user.dailyUsed),
-    dailyLimit: credit.dailyLimit(),
+    dailyLimit: credit.dailyLimitFor(user),
     totalCreditsUsed: credit.round2(user.totalCreditsUsed),
     totalTokensUsed: user.totalTokensUsed,
     byProject: byProject.map((i) => ({

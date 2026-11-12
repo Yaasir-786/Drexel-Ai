@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const MIN_PREVIEW = 360;
 const MIN_CHAT = 420;
+const HANDLE_WIDTH = 10;
 
 export default function usePanelResize({ open } = {}) {
   const containerRef = useRef(null);
@@ -22,7 +23,7 @@ export default function usePanelResize({ open } = {}) {
     const styles = window.getComputedStyle(container);
     const contentLeft = rect.left + (parseFloat(styles.paddingLeft) || 0);
     const contentRight = rect.right - (parseFloat(styles.paddingRight) || 0);
-    const denominator = contentRight - contentLeft - MIN_CHAT - MIN_PREVIEW;
+    const denominator = contentRight - contentLeft - MIN_CHAT - MIN_PREVIEW - HANDLE_WIDTH;
 
     const move = (e) => {
       const value =
@@ -40,7 +41,8 @@ export default function usePanelResize({ open } = {}) {
   }, []);
 
   // CSS calc follows window resizes automatically, no JS clamping needed
-  const previewStyle = { "--panel-w": `calc(360px + (100% - 780px) * ${ratio})` };
+  // (360 + 420 + 10 = 790: preview min + chat min + the drag handle)
+  const previewStyle = { "--panel-w": `calc(360px + (100% - 790px) * ${ratio})` };
 
   return { containerRef, ratio, previewStyle, onPointerDown };
 }

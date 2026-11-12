@@ -1,5 +1,5 @@
 // CodePanel component: flat file tree, open tabs, line numbers, and code viewer/editor
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileCode,
   X,
@@ -31,6 +31,34 @@ export default function CodePanel({
   const [openTabs, setOpenTabs] = useState(defaultFile ? [defaultFile] : []);
   const [isEdited, setIsEdited] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const handleSave = useCallback(async () => {
+    if (!onSave || isSaving || isGenerating) return;
+    try {
+      // the parent gets the edited files as [{ path, content }]
+      await onSave(
+        Object.entries(fileMap).map(([path, content]) => ({ path, content })),
+      );
+      setIsEdited(false);
+    } catch {
+      // the parent shows the error toast
+    }
+  }, [onSave, isSaving, isGenerating, fileMap]);
+
+  // Ctrl/Cmd+S saves the edited files
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        if (isEdited && !isSaving && !isGenerating) {
+          // only take over the browser shortcut when there is something to save
+          e.preventDefault();
+          handleSave();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isEdited, isSaving, isGenerating, handleSave]);
 
   if (isNew || sortedPaths.length === 0) {
     return (
@@ -70,34 +98,6 @@ export default function CodePanel({
     setFileMap({ ...fileMap, [currentActiveFile]: e.target.value });
     setIsEdited(true);
   };
-
-  const handleSave = async () => {
-    if (!onSave || isSaving || isGenerating) return;
-    try {
-      // the parent gets the edited files as [{ path, content }]
-      await onSave(
-        Object.entries(fileMap).map(([path, content]) => ({ path, content })),
-      );
-      setIsEdited(false);
-    } catch {
-      // the parent shows the error toast
-    }
-  };
-
-  // Ctrl/Cmd+S saves the edited files
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        if (isEdited && !isSaving && !isGenerating) {
-          // only take over the browser shortcut when there is something to save
-          e.preventDefault();
-          handleSave();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isEdited, isSaving, isGenerating, onSave, fileMap]);
 
   const handleCopy = () => {
     const code = fileMap[currentActiveFile] || '';

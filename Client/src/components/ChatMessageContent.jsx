@@ -110,7 +110,6 @@ export default function ChatMessageContent({ content }) {
 // Inline formatting for `inline code` and **bold**
 function renderInlineFormatted(text) {
   const tokens = [];
-  let remaining = text;
   let keyCounter = 0;
 
   // Split on inline code `code` and bold **bold**

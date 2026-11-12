@@ -10,6 +10,7 @@ export default function ArtifactPanel({
   file = null,
   title = "Project",
   ratio = 1,
+  previewStyle,
   onClose,
   onFixError,
 }) {
@@ -24,8 +25,8 @@ export default function ArtifactPanel({
 
   return (
     <div
-      style={{ "--panel-w": `calc(360px + (100% - 780px) * ${ratio})` }}
-      className="fixed inset-0 z-50 lg:static lg:w-[var(--panel-w)] lg:shrink-0 lg:min-w-0 lg:border-l border-line bg-card text-ink flex flex-col h-full overflow-hidden"
+      style={previewStyle}
+      className="fixed inset-0 z-50 lg:static lg:w-[var(--panel-w)] lg:shrink-0 lg:min-w-0 border-line bg-card text-ink flex flex-col h-full overflow-hidden"
     >
       {/* Header */}
       <div className="h-14 border-b border-line px-4 flex items-center justify-between shrink-0 bg-surface/50">
@@ -84,7 +85,10 @@ export default function ArtifactPanel({
               <div className={activeTab === "code" ? "h-full" : "hidden"}>
                 <CodePanel
                   readOnly
-                  key={file || "all"}
+                  key={`${file || "all"}-${files.length}-${files.reduce(
+                    (n, f) => n + f.content.length,
+                    0,
+                  )}`}
                   files={file ? { [file]: map[file] || "" } : map}
                   initialFile={file}
                 />

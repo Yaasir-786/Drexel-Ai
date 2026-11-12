@@ -732,10 +732,18 @@ const streamAgent = async (req, res) => {
         .filter(Boolean)
         .join("\n\n");
 
+      // no files and not aborted: the summary would claim success, save a failure text
+      const assistantContent =
+        !coded.aborted && paths.length === 0
+          ? coded.truncated
+            ? "The code could not be completed because the answer was cut off. Please try again or ask for a smaller part first."
+            : "Coder did not return any files. Please try again."
+          : content;
+
       addRecord({
         agent: "coder",
         recordMode: "build",
-        content,
+        content: assistantContent,
         tokens: coded.tokens,
         files: coded.aborted ? [] : paths,
       });
@@ -744,7 +752,9 @@ const streamAgent = async (req, res) => {
         if (coded.files.length === 0) {
           errored = true;
           send("error", {
-            message: "Coder did not return any files. Please try again.",
+            message: coded.truncated
+              ? "The answer was cut off before any file was complete. Try a smaller request."
+              : "Coder did not return any files. Please try again.",
           });
         } else {
           // merge new / changed files into the project

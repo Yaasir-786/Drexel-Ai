@@ -71,7 +71,7 @@ You apply the user's instruction to an existing image definition.
 Reply with the new definition only (the prompt or the complete SVG): no explanations, no markdown fences.`;
 
 // rules for both agents when an image analysis or image description is in the request
-export const REFERENCE_IMAGE_RULES = `REFERENCE IMAGE RULES (only when an "image analysis" or "image description" is part of the request)
+const REFERENCE_IMAGE_RULES = `REFERENCE IMAGE RULES (only when an "image analysis" or "image description" is part of the request)
 - Rebuild the SAME page: same theme (light or dark exactly as in THEME), same section order, same layout. Use colors only from the PALETTE and COLOR MAP. Copy text and numbers exactly from TEXT. If a text is unreadable, write a realistic value in the same style; never write "placeholder", "lorem ipsum", never invent extra sections.
 - Charts, gauges and progress rings as inline SVG or CSS shapes with the same look; avatars as colored circles with initials; icons as inline SVG (lucide style paths). No emoji, no icon fonts, no external images.
 - Layout with CSS grid/flex, box-sizing: border-box, min-width: 0 on flex/grid children, responsive: no fixed pixel widths for main areas, no overlapping, no horizontal scroll.`;

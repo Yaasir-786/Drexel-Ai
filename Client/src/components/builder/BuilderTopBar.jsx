@@ -1,16 +1,14 @@
-// BuilderTopBar component: mobile menu, back button, inline editable project name, preview, credits, and theme toggle
+// BuilderTopBar component: mobile menu, back button, inline editable project name, preview, and theme toggle
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Pencil,
-  Coins,
   Menu,
   Eye,
 } from 'lucide-react';
 import ThemeToggle from '../ThemeToggle';
 import Button from '../Button';
-import { useSelector } from 'react-redux';
 
 export default function BuilderTopBar({
   projectName,
@@ -20,7 +18,6 @@ export default function BuilderTopBar({
   isPreviewOpen,
   onOpenPreview,
 }) {
-  const { user } = useSelector((state) => state.auth);
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(projectName);
 
@@ -93,7 +90,7 @@ export default function BuilderTopBar({
         )}
       </div>
 
-      {/* Right side: preview, credits pill, action buttons, theme toggle */}
+      {/* Right side: preview button and theme toggle */}
       <div className="flex items-center gap-2.5 shrink-0">
         {/* Preview button: only when the project has files and the workspace is closed */}
         {canPreview && !isPreviewOpen && (
@@ -106,12 +103,6 @@ export default function BuilderTopBar({
             Preview
           </Button>
         )}
-
-        {/* Credits pill (ONE line) */}
-        <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-line bg-surface text-xs font-medium text-ink whitespace-nowrap">
-          <Coins size={14} className="text-[#0099FF] shrink-0" />
-          <span>{user?.credits ?? 0} credits</span>
-        </div>
 
         {/* Theme Toggle (40x40) */}
         <ThemeToggle />
