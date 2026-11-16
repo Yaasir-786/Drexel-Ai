@@ -47,6 +47,8 @@ const errorHandler = (err, req, res, next) => {
 
   res.status(statusCode).json({
     message,
+    // the daily credit limit tells the client when it resets
+    ...(err.resetAt ? { resetAt: err.resetAt } : {}),
     stack: process.env.NODE_ENV === "development" ? err.stack : null,
   });
 };

@@ -123,6 +123,12 @@ const downloadChatZip = async (req, res) => {
   // zip entries: path -> content (original zip first, chat files on top)
   const entries = new Map();
 
+  // ?paths=a,b scopes the zip to only those chat files (no original zip)
+  const wantedPaths = String(req.query.paths || "")
+    .split(",")
+    .map((path) => path.trim())
+    .filter(Boolean);
+
   // base: the original zip of the LAST uploaded zip in this chat
   let lastZipAttachment = null;
   for (const message of chat.messages || []) {
@@ -132,7 +138,7 @@ const downloadChatZip = async (req, res) => {
     if (found) lastZipAttachment = found;
   }
 
-  if (lastZipAttachment) {
+  if (lastZipAttachment && wantedPaths.length === 0) {
     const document = await Document.findOne({
       _id: lastZipAttachment.documentId,
       userId: req.user._id,
@@ -193,7 +199,9 @@ const downloadChatZip = async (req, res) => {
   // overlay the AI's new or changed files on top of the base
   for (const file of chat.files || []) {
     const path = file.path.replace(/^\/+/, "").replace(/\\/g, "/");
+    // a scoped zip keeps only the requested paths
     if (!path || path.includes("..")) continue;
+    if (wantedPaths.length > 0 && !wantedPaths.includes(file.path)) continue;
     const content = Buffer.from(file.content, "utf8");
 
     // replace the entry with the same path (also under the original root folder)

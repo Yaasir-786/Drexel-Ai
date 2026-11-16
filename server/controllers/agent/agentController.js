@@ -34,6 +34,9 @@ import {
   imageRequestText,
   lastUserText,
   isZipRequest,
+  isZipNegated,
+  isFileShowRequest,
+  pickZipFiles,
 } from "../../agents/plannerAgent.js";
 import { runCoderAgent } from "../../agents/coderAgent.js";
 import { buildDocContext } from "../../agents/docContext.js";
@@ -67,7 +70,7 @@ const imageErrorMessage = (error) => {
 };
 
 // ---------- ZIP: package the files of the chat/project as a download (no LLM call, no credits) ----------
-const handleZipRequest = async ({ send, addRecord, convo, currentFiles }) => {
+const handleZipRequest = async ({ send, addRecord, convo, currentFiles, message }) => {
   // the last uploaded zip in the messages decides if there is anything to package
   let lastZipAttachment = null;
   for (const item of convo.messages || []) {
@@ -76,6 +79,31 @@ const handleZipRequest = async ({ send, addRecord, convo, currentFiles }) => {
   }
 
   if (currentFiles.length > 0 || lastZipAttachment) {
+    // a message that names files packages only those files (no original zip)
+    const wanted = pickZipFiles(
+      message,
+      currentFiles.map((file) => file.path),
+    );
+    if (wanted.length > 0) {
+      const zipData = {
+        name:
+          wanted.length === 1
+            ? wanted[0].split("/").pop().replace(/\.[^.]+$/, "")
+            : convo.title || convo.name || "files",
+        fileCount: wanted.length,
+        paths: wanted,
+      };
+      send("zip", zipData);
+      addRecord({
+        agent: "planner",
+        recordMode: "chat",
+        content: "Here is your zip file.",
+        tokens: 0,
+        zip: zipData,
+      });
+      return;
+    }
+
     // the file count: built files + indexed files of the uploaded zip
     const doc = lastZipAttachment?.documentId
       ? await Document.findById(lastZipAttachment.documentId)
@@ -309,11 +337,32 @@ const streamAgent = async (req, res) => {
   let linkAttachments = [];
 
   openStream(res);
-  const send = makeSender(res);
+  const baseSend = makeSender(res);
 
   // "Stop generation" = client closes the connection -> LLM calls are cancelled
   const controller = new AbortController();
   const signal = controller.signal;
+
+  // the daily limit can end a run in the middle: streamed text is charged at
+  // about 3.5 characters per token, so it counts towards the credits while streaming
+  const allowance = credit.remainingAllowance(req.user);
+  let streamedChars = 0;
+  let limitHit = false;
+
+  const send = (event, data) => {
+    baseSend(event, data);
+    if (event === "token" || event === "file_chunk") {
+      streamedChars += data.text.length;
+      if (
+        !limitHit &&
+        credit.tokensToCredits(totalTokens + pendingTokens + streamedChars / 3.5) >=
+          allowance
+      ) {
+        limitHit = true;
+        controller.abort();
+      }
+    }
+  };
 
   // resolved once the stream finished saving, so the stop route can trim the text
   let finishSaving = () => {};
@@ -365,6 +414,8 @@ const streamAgent = async (req, res) => {
 
     const tokens = ownTokens + pendingTokens;
     pendingTokens = 0;
+    // the streamed estimate is replaced by this call's real tokens
+    streamedChars = 0;
     const creditsUsed = credit.tokensToCredits(tokens);
     totalCredits += creditsUsed;
     totalTokens += tokens;
@@ -479,9 +530,32 @@ const streamAgent = async (req, res) => {
     const wantsZipAfterBuild =
       /\bzip\b/i.test(message) &&
       ZIP_DELIVER.test(message) &&
-      !ZIP_NOT_DELIVER.test(message);
+      !ZIP_NOT_DELIVER.test(message) &&
+      !isZipNegated(message);
 
-    let goBuild = !zipRequest && !stoppedEarly && (mode === "build" || type === "fix");
+    // "show me the README": named files to display instead of a build
+    const shownPaths = zipRequest
+      ? []
+      : isFileShowRequest(
+          message,
+          runFiles.map((file) => file.path),
+        );
+
+    // build-mode messages that only ask or mention a zip go through the intent check first
+    const looksLikeQuestion =
+      /\?\s*$/.test(message.trim()) ||
+      /^\s*(what|why|how|when|which|who|is|are|can|could|does|do|kya|kyu|kyun|kaise|kaun|kitna|kab|batao|bata|explain|tell me)\b/i.test(
+        message,
+      );
+    const askFirst =
+      mode === "build" && type !== "fix" && (/\bzip\b/i.test(message) || looksLikeQuestion);
+
+    let goBuild =
+      !zipRequest &&
+      !stoppedEarly &&
+      (mode === "build" || type === "fix") &&
+      !askFirst &&
+      shownPaths.length === 0;
 
     // ---------- ZIP: hand over the files as a download (no LLM call, no credits) ----------
     if (stoppedEarly) {
@@ -493,6 +567,30 @@ const streamAgent = async (req, res) => {
         addRecord,
         convo: { ...convo, messages: baseMessages },
         currentFiles: runFiles,
+        message,
+      });
+    } else if (shownPaths.length > 0) {
+      // ---------- FILES: show the named files in the side panel (no LLM call, no credits) ----------
+      const fileName = (p) => p.split("/").pop();
+      const zip = {
+        name:
+          shownPaths.length === 1
+            ? fileName(shownPaths[0])
+            : `${shownPaths.length} files`,
+        fileCount: shownPaths.length,
+        paths: shownPaths,
+        kind: "files",
+      };
+      send("zip", zip);
+      addRecord({
+        agent: "planner",
+        recordMode: "chat",
+        content:
+          shownPaths.length === 1
+            ? `Here is ${fileName(shownPaths[0])}.`
+            : "Here are your files.",
+        tokens: 0,
+        zip,
       });
     } else if (!goBuild) {
       // ---------- CHAT: Planner Agent answers (or detects that the user wants a build) ----------
@@ -530,6 +628,7 @@ const streamAgent = async (req, res) => {
           addRecord,
           convo: { ...convo, messages: baseMessages },
           currentFiles: runFiles,
+          message,
         });
       } else if (intent.intent === "IMAGE") {
         // ---------- IMAGE: generate a picture (no files, no build flow) ----------
@@ -745,17 +844,21 @@ const streamAgent = async (req, res) => {
         recordMode: "build",
         content: assistantContent,
         tokens: coded.tokens,
-        files: coded.aborted ? [] : paths,
+        // the limit stop keeps what was already written, a user stop does not
+        files: coded.aborted && !limitHit ? [] : paths,
       });
 
-      if (!coded.aborted) {
+      if (!coded.aborted || limitHit) {
         if (coded.files.length === 0) {
-          errored = true;
-          send("error", {
-            message: coded.truncated
-              ? "The answer was cut off before any file was complete. Try a smaller request."
-              : "Coder did not return any files. Please try again.",
-          });
+          // the limit stop is not an error, it gets its own banner on the client
+          if (!limitHit) {
+            errored = true;
+            send("error", {
+              message: coded.truncated
+                ? "The answer was cut off before any file was complete. Try a smaller request."
+                : "Coder did not return any files. Please try again.",
+            });
+          }
         } else {
           // merge new / changed files into the project
           const merged = new Map(
@@ -1005,6 +1108,9 @@ const streamAgent = async (req, res) => {
       mode: effectiveMode,
       aborted,
       failed: errored,
+      // the run stopped in the middle because the daily limit ran out
+      limitReached: limitHit,
+      resetAt: limitHit ? credit.nextResetAt() : null,
       changedFiles,
       tokensUsed: totalTokens,
       creditsUsed: credit.round2(totalCredits),

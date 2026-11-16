@@ -152,7 +152,7 @@ DESIGN (follow PLAN.designLevel and PLAN.designNotes for visual output)
 - premium: a distinctive, aesthetic, eye-catching design. Bold color palette with gradients, an expressive Google Fonts pairing, a strong hero, well structured sections that fit the request (for example features, how it works, testimonials, pricing, FAQ, call to action, footer), glass or blurred surfaces, generous whitespace, subtle animations and transitions (hover, fade-in on scroll), micro-interactions and a polished mobile layout.
 - Never make a simple request fancy and never make a premium request plain.
 
-EDIT MODE (PLAN.mode is edit): you receive the current files. Keep the existing stack and structure. Keep the design language, unless the user asks for a redesign or PLAN.designLevel is higher than the current look, then restyle as needed. Output ONLY the files you create or change, each with its full content.
+EDIT MODE (PLAN.mode is edit): you receive the current files. Keep the existing stack and structure. Keep the design language, unless the user asks for a redesign or PLAN.designLevel is higher than the current look, then restyle as needed. Output ONLY the files you create or change, each with its full content. Never output README.md, .env.example, package.json or other docs/config files unless the user's request is about them or the change really needs them.
 NEW MODE (PLAN.mode is new): ignore any existing files and write the whole project from scratch.
 
 OUTPUT FORMAT (strict)

@@ -17,9 +17,16 @@ const BUILD_WORDS = /\b(website|app|page|project|ui|build|component)\b/i;
 
 // cheap keyword check: the user wants to GET a zip of the chat files
 const ZIP_WORD = /\bzip\b/i;
-const ZIP_GET = /\b(give|send|download|export|bana|banao|bana de|bhej|chahiye|nikal|make)\b|\bzip(?:\s+file)?\s+(?:de|do|dedo)\b/i;
-const ZIP_ABOUT = /\bzip(?:\s+file)?\s+(?:ka|ke|ki|me|mein|se)\b|\b(me se|se la|from the zip|inside|andar|extract|read|explain|kya|what|kitna|kaun|function|method|class|code|readme|bug|error|fix|size|naam|names?)\b|\b\w+\.(js|jsx|ts|tsx|json|py|html|css|md|txt)\b/i;
+const ZIP_GET = /\b(give|send|download|export|bana|banao|bana de|bhej|bhejo|chahiye|nikal|nikalo|make|de|do|dedo|dena|karke|banake)\b/i;
+const ZIP_ABOUT = /\bzip(?:\s+file)?\s+(?:ka|ke|ki|se)\b|\b(me se|se la|from the zip|inside|andar|extract|read|explain|kya|what|kitna|kaun|kaise|kyu|kyun|why|how|function|method|class|code|bug|error|fix|size|naam|names?)\b/i;
+const ZIP_EDIT = /\b(edit|change|update|add|remove|modify|improve|badlo|badal|hata|hatao|jodo|laga|lagao)\b/i;
 const ZIP_OF = /\bzip\s+of\b|\b(ka|ki|ke)\s+zip\b/i;
+
+// true when the message says NO to a zip ("zip mat do", "no zip please")
+export const isZipNegated = (text = "") =>
+  /\bzip(?:\s+file)?\s+(?:mat|nahi|nhi|na)\b|\b(?:no|not|without|don'?t|dont|mat|nahi|nhi)\s+(?:a\s+|the\s+)?zip\b/i.test(
+    text || "",
+  );
 
 // true when the message only asks to receive the files as a zip (shared by chat and build mode)
 export const isZipRequest = (text = "") => {
@@ -28,12 +35,37 @@ export const isZipRequest = (text = "") => {
     ZIP_WORD.test(t) &&
     ZIP_GET.test(t) &&
     !ZIP_ABOUT.test(t) &&
+    !ZIP_EDIT.test(t) &&
+    !isZipNegated(t) &&
     !(
       /\b(build|create|make|bana|banao)\b/i.test(t) &&
       /\b(app|website|page|game|component)\b/i.test(t) &&
       !ZIP_OF.test(t)
     )
   );
+};
+
+// "show me the README": named files to display, no zip and no LLM call
+export const isFileShowRequest = (text, paths = []) => {
+  const t = text || "";
+  const showWord =
+    /\b(give|show|send|display|open|print|dikha|dikhao|de|do|dedo|dena|bhej|bhejo|chahiye|batao)\b/i.test(t);
+  if (!showWord || ZIP_EDIT.test(t) || ZIP_ABOUT.test(t) || isZipRequest(t)) return [];
+  return pickZipFiles(t, paths);
+};
+
+// picks the paths whose file name, or name without extension, appears as a whole word in the text
+export const pickZipFiles = (text, paths = []) => {
+  const t = text || "";
+  return paths.filter((path) => {
+    const name = path.split("/").pop() || "";
+    const base = name.replace(/\.[^.]+$/, "");
+    const pattern = new RegExp(
+      `\\b${(base || name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+      "i",
+    );
+    return pattern.test(t);
+  });
 };
 
 // retry follow-ups like "try again" refer to the previous user message

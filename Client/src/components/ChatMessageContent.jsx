@@ -44,7 +44,7 @@ export default function ChatMessageContent({ content }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 leading-relaxed">
+    <div className="flex flex-col gap-3 leading-relaxed min-w-0 [overflow-wrap:anywhere]">
       {parts.map((part, index) => {
         if (part.type === 'code') {
           return (
@@ -95,7 +95,7 @@ export default function ChatMessageContent({ content }) {
               }
 
               return (
-                <p key={pIdx} className="whitespace-pre-wrap">
+                <p key={pIdx} className="whitespace-pre-wrap min-w-0 [overflow-wrap:anywhere]">
                   {renderInlineFormatted(p)}
                 </p>
               );

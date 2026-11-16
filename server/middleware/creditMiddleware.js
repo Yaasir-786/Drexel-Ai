@@ -12,6 +12,20 @@ const dailyLimitFor = (user) => (user.userType === "ADMIN" ? ADMIN_DAILY_LIMIT :
 
 const dailyCredits = () => Number(process.env.DAILY_CREDITS) || 100;
 
+// next midnight IST (the daily limit resets at 12:00 AM IST)
+const nextResetAt = () => {
+  const nowIst = new Date(Date.now() + IST_OFFSET_MS);
+  const nextMidnightIst = new Date(nowIst);
+  nextMidnightIst.setUTCHours(24, 0, 0, 0);
+  return new Date(nextMidnightIst.getTime() - IST_OFFSET_MS).toISOString();
+};
+
+// credits the user can still use right now (balance and daily limit, whichever is smaller)
+const remainingAllowance = (user) => {
+  const usedToday = user.dailyDate === todayKey() ? user.dailyUsed : 0;
+  return Math.max(0, Math.min(user.credits, dailyLimitFor(user) - usedToday));
+};
+
 // 1 credit = 1000 tokens by default (CREDITS_PER_1K_TOKENS in .env)
 const tokensToCredits = (tokens) => {
   const rate = Number(process.env.CREDITS_PER_1K_TOKENS) || 1;
@@ -28,13 +42,17 @@ const checkCredits = async (req, res, next) => {
 
   if (user.credits < needed) {
     res.status(402);
-    throw new Error(`Not Enough Credits... You Need At Least ${needed} Credits...`);
+    const balanceError = new Error(`Not Enough Credits... You Need At Least ${needed} Credits...`);
+    balanceError.resetAt = nextResetAt();
+    throw balanceError;
   }
 
   const usedToday = user.dailyDate === todayKey() ? user.dailyUsed : 0;
   if (usedToday >= dailyLimitFor(user)) {
     res.status(429);
-    throw new Error("Daily Credit Limit Reached, Please Try Again Tomorrow...");
+    const limitError = new Error("Daily Credit Limit Reached, Please Try Again Tomorrow...");
+    limitError.resetAt = nextResetAt();
+    throw limitError;
   }
 
   next();
@@ -99,6 +117,8 @@ const credit = {
   dailyLimit,
   dailyLimitFor,
   dailyCredits,
+  nextResetAt,
+  remainingAllowance,
   refreshDaily,
   round2,
 };

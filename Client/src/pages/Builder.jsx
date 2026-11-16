@@ -1,7 +1,7 @@
 // Builder page: sidebar + chat by default, Preview/Code workspace opens on demand
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Code2, Eye, X } from 'lucide-react';
+import { Code2, Eye, X, FileArchive, FileText } from 'lucide-react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -52,6 +52,8 @@ export default function Builder() {
   const [statusMessage, setStatusMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // credit limit banner above the prompt box (null = hidden)
+  const [limitNotice, setLimitNotice] = useState(null);
 
   // Preview/Code workspace: closed by default, opened only from the Preview button
   const [showWorkspace, setShowWorkspace] = useState(false);
@@ -65,6 +67,8 @@ export default function Builder() {
 
   // Tab state: [preview | code]
   const [activeTab, setActiveTab] = useState('preview');
+  // zip view in the workspace (read-only code view of the zip files)
+  const [zipView, setZipView] = useState(null);
   const controllerRef = useRef(null);
   const typerRef = useRef(null);
   const requestIdRef = useRef(null);
@@ -86,6 +90,17 @@ export default function Builder() {
 
   useEffect(() => {
     setCurrentProjectId(id === 'new' ? null : id);
+    setZipView(null);
+    // restore the limit notice saved for this project (bad JSON is ignored)
+    if (id && id !== 'new') {
+      try {
+        setLimitNotice(JSON.parse(localStorage.getItem(`drexel-limit-${id}`) || 'null'));
+      } catch {
+        setLimitNotice(null);
+      }
+    } else {
+      setLimitNotice(null);
+    }
     // the workspace starts closed on every project, but not right after a
     // new project was created in this session (the id just changed to it)
     if (id !== currentProjectId) setShowWorkspace(false);
@@ -129,6 +144,18 @@ export default function Builder() {
     }
   };
 
+  // open a delivered zip in the workspace when its files exist in the project
+  const openZip = (zip) => {
+    if (!zip) return;
+    const has = zip.paths?.length
+      ? files.some((file) => zip.paths.includes(file.path))
+      : files.length > 0;
+    if (!has) return;
+    setZipView(zip);
+    setActiveTab('code');
+    setShowWorkspace(true);
+  };
+
   const handleSendMessage = async (
     text,
     mode,
@@ -138,6 +165,11 @@ export default function Builder() {
     replaceFromMessageId = null,
   ) => {
     if ((!text?.trim() && type !== "fix" && attachments.length === 0) || isGenerating) return;
+
+    // a new send always clears the limit notice
+    setLimitNotice(null);
+    const noticeId = currentProjectId || id;
+    if (noticeId) localStorage.removeItem(`drexel-limit-${noticeId}`);
 
     let projectId = currentProjectId;
     let isCreated = false;
@@ -231,11 +263,12 @@ export default function Builder() {
           } else if (event === "image") {
             pushImageMessage(setMessages, data);
           } else if (event === "zip") {
-            // zip download card for the assistant reply
+            // zip download card for the assistant reply; auto-opens on desktop
             setMessages((prev) => [
               ...prev,
               { type: "assistant", text: "Here is your zip file.", zip: data },
             ]);
+            if (window.innerWidth >= 1024) openZip(data);
           } else if (event === "file_start") {
             setIsWritingFiles(true);
           } else if (event === "file_end") {
@@ -254,6 +287,12 @@ export default function Builder() {
             toast(data.message);
           } else if (event === "done") {
             doneData = data;
+            // the limit stopped the run in the middle: banner with a Continue button
+            if (data.limitReached) {
+              const notice = { resetAt: data.resetAt, canContinue: true, mode: data.mode };
+              setLimitNotice(notice);
+              localStorage.setItem(`drexel-limit-${projectId}`, JSON.stringify(notice));
+            }
           }
         },
       });
@@ -295,11 +334,19 @@ export default function Builder() {
       const hasPreview =
         allPaths.has("/src/main.jsx") || allPaths.has("/index.html");
       if (doneData?.changedFiles?.length > 0 && hasPreview && window.innerWidth >= 1024) {
+        setZipView(null);
         setShowWorkspace(true);
       }
     } catch (error) {
       typer?.stop();
-      if (error.name !== "AbortError") {
+      if ((error.status === 402 || error.status === 429) && /credit/i.test(error.message)) {
+        // the credit limit shows as a banner, not a toast
+        setLimitNotice({
+          resetAt: error.resetAt,
+          canContinue: false,
+          mode: mode ? mode.toLowerCase() : 'chat',
+        });
+      } else if (error.name !== "AbortError") {
         toast.error(error.message || "Something went wrong");
       }
     } finally {
@@ -317,6 +364,22 @@ export default function Builder() {
         return prev;
       });
     }
+  };
+
+  // Continue after the limit reset: same project, run goes on from where it stopped
+  const handleContinueRun = () => {
+    const text =
+      limitNotice?.mode === 'build'
+        ? 'Continue the previous build from where it stopped. Do not rewrite files that are already complete; finish the missing files and the cut-off parts.'
+        : 'Continue exactly from where you stopped. Do not repeat anything you already wrote.';
+    handleSendMessage(text, limitNotice?.mode === 'build' ? 'Build' : 'Chat', [], 'prompt');
+  };
+
+  // X on the banner: hide it and drop the saved notice
+  const handleDismissLimitNotice = () => {
+    setLimitNotice(null);
+    const targetId = currentProjectId || id;
+    if (targetId) localStorage.removeItem(`drexel-limit-${targetId}`);
   };
 
   // Stop button: ask the server to abort + trim, then stop everything locally too
@@ -419,11 +482,47 @@ export default function Builder() {
 
   const fileMap = Object.fromEntries(files.map((f) => [f.path, f.content]));
 
+  // zip view files: only the ones named by the zip (all files without paths)
+  const zipFiles = zipView?.paths?.length
+    ? files.filter((f) => zipView.paths.includes(f.path))
+    : files;
+  const zipMap = Object.fromEntries(zipFiles.map((f) => [f.path, f.content]));
+
   // workspace tabs + panels, shared by the desktop column and the mobile overlay
   const workspace = (
     <>
-      {/* Workspace Tab Selector */}
-      <div className="h-11 border-b border-line bg-card px-4 flex items-center justify-between shrink-0">
+      {/* Workspace Tab Selector, replaced by the zip header in the zip view */}
+      {zipView ? (
+        <div className="h-11 border-b border-line bg-card px-4 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {zipView.kind === "files" ? (
+              <FileText size={16} className="text-[#0099FF] shrink-0" />
+            ) : (
+              <FileArchive size={16} className="text-[#0099FF] shrink-0" />
+            )}
+            <span className="text-xs font-mono font-semibold text-ink truncate">
+              {zipView.kind === "files" ? zipView.name : `${zipView.name}.zip`}
+            </span>
+            <span className="text-xs text-muted shrink-0">
+              {zipFiles.length} {zipFiles.length === 1 ? "file" : "files"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowWorkspace(false);
+                setZipView(null);
+              }}
+              aria-label="Close workspace"
+              className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-surface cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="h-11 border-b border-line bg-card px-4 flex items-center justify-between shrink-0">
         <div className="flex rounded-xl bg-surface border border-line p-0.5">
           <button
             type="button"
@@ -465,14 +564,24 @@ export default function Builder() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Workspace Content */}
-      <div className={activeTab === "preview" ? "h-full" : "hidden"}>
-        <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} ratio={previewRatio} onFixError={handleFixError} />
-      </div>
-      <div className={activeTab === "code" ? "h-full" : "hidden"}>
-        <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} onSave={handleSaveFiles} isSaving={isSaving} />
-      </div>
+      {zipView ? (
+        // zip view: read-only code viewer only, never the preview
+        <div className="flex-1 min-h-0">
+          <CodePanel readOnly key={`zip-${zipView.name}`} files={zipMap} />
+        </div>
+      ) : (
+        <>
+          <div className={activeTab === "preview" ? "flex-1 min-h-0" : "hidden"}>
+            <PreviewPanel files={fileMap} isNew={!hasGeneratedCode} ratio={previewRatio} onFixError={handleFixError} />
+          </div>
+          <div className={activeTab === "code" ? "flex-1 min-h-0" : "hidden"}>
+            <CodePanel key={files.reduce((n, f) => n + f.content.length, 0) + files.length} files={fileMap} isNew={!hasGeneratedCode} isGenerating={isGenerating} onSave={handleSaveFiles} isSaving={isSaving} />
+          </div>
+        </>
+      )}
     </>
   );
 
@@ -505,13 +614,16 @@ export default function Builder() {
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           canPreview={hasGeneratedCode}
           isPreviewOpen={showWorkspace}
-          onOpenPreview={() => setShowWorkspace(true)}
+          onOpenPreview={() => {
+            setZipView(null);
+            setShowWorkspace(true);
+          }}
         />
 
         {/* Main Area: chat only by default, chat + workspace after Preview */}
         <div
           ref={containerRef}
-          className={`flex-1 flex min-h-0 overflow-hidden relative ${showWorkspace ? "" : "bg-card"}`}
+          className={`flex-1 flex min-h-0 overflow-clip relative ${showWorkspace ? "" : "bg-card"}`}
         >
           {/* Chat column: centered by default, fluid with a minimum beside the workspace */}
           <div
@@ -532,8 +644,19 @@ export default function Builder() {
               onImageEditStart={handleImageEditStart}
               onImageEditSuccess={handleImageEditSuccess}
               onImageEditError={handleImageEditError}
-              onDownloadZip={() => downloadZip(files, projectName)}
+              onDownloadZip={(zip) =>
+                downloadZip(
+                  zip?.paths?.length
+                    ? files.filter((f) => zip.paths.includes(f.path))
+                    : files,
+                  zip?.name || projectName,
+                )
+              }
               onEditMessage={handleEditMessage}
+              onOpenZip={openZip}
+              limitNotice={limitNotice}
+              onContinue={handleContinueRun}
+              onDismissLimitNotice={handleDismissLimitNotice}
             />
           </div>
 
@@ -546,7 +669,7 @@ export default function Builder() {
           {showWorkspace && (
             <div
               style={previewStyle}
-              className="fixed inset-0 z-50 bg-surface flex flex-col lg:static lg:z-auto lg:w-[var(--panel-w)] lg:shrink-0 lg:min-w-0"
+              className="fixed inset-0 z-50 bg-surface flex flex-col lg:static lg:z-auto lg:w-[var(--panel-w)] lg:shrink-0 lg:min-w-0 overflow-hidden"
             >
               {workspace}
             </div>

@@ -21,11 +21,12 @@ const getChatById = async (token, id) => {
   return response.data;
 };
 
-// the zip of a chat comes back as a binary blob
-const downloadZip = async (token, id) => {
+// the zip of a chat comes back as a binary blob (paths scopes it to specific files)
+const downloadZip = async (token, id, paths) => {
   const response = await axios.get(`/api/chats/${id}/zip`, {
     headers: { authorization: `Bearer ${token}` },
     responseType: "blob",
+    params: paths?.length ? { paths: paths.join(",") } : undefined,
   });
   return response.data;
 };

@@ -37,20 +37,20 @@ const copyText = async (text) => {
 const variants = {
   page: {
     bubble:
-      "font-serif rounded-2xl p-4 text-base shadow-xs bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white whitespace-pre-wrap",
+      "font-serif rounded-2xl p-4 text-base shadow-xs bg-gradient-to-r from-[#0099FF] to-[#6D5DFC] text-white whitespace-pre-wrap min-w-0 [overflow-wrap:anywhere]",
     textIsParagraph: false,
     chipsAbove: true,
     chips: "flex flex-wrap gap-1.5 mb-2 pb-2 border-b border-white/20",
-    chip: "inline-flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded text-[10px] text-white font-medium",
+    chip: "inline-flex items-center gap-1 min-w-0 max-w-full [overflow-wrap:anywhere] bg-white/20 px-2 py-0.5 rounded text-[10px] text-white font-medium",
     area: "font-serif text-base",
   },
   panel: {
     bubble:
-      "bg-[#0099FF] text-white rounded-2xl rounded-tr-xs px-4 py-2.5 font-serif text-sm shadow-xs",
+      "bg-[#0099FF] text-white rounded-2xl rounded-tr-xs px-4 py-2.5 font-serif text-sm shadow-xs min-w-0 [overflow-wrap:anywhere]",
     textIsParagraph: true,
     chipsAbove: false,
     chips: "mt-2 pt-1.5 border-t border-white/20 flex flex-wrap gap-1",
-    chip: "inline-flex items-center gap-1 text-[10px] bg-white/20 px-2 py-0.5 rounded-md",
+    chip: "inline-flex items-center gap-1 min-w-0 max-w-full [overflow-wrap:anywhere] text-[10px] bg-white/20 px-2 py-0.5 rounded-md",
     area: "font-serif text-sm",
   },
 };
@@ -141,7 +141,7 @@ export default function UserMessage({
                 setIsEditing(false);
               }
             }}
-            className={`w-full bg-transparent text-white resize-none outline-none ${styles.area}`}
+            className={`w-full min-w-0 bg-transparent text-white resize-none outline-none ${styles.area}`}
             rows={Math.min(10, Math.max(1, draft.split("\n").length))}
           />
           {!styles.chipsAbove && chips}
@@ -171,7 +171,7 @@ export default function UserMessage({
       <div className={`max-w-[85%] ${styles.bubble}`}>
         {styles.chipsAbove && chips}
         {styles.textIsParagraph ? (
-          <p className="whitespace-pre-wrap">{msg.text}</p>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{msg.text}</p>
         ) : (
           msg.text
         )}

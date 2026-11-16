@@ -11,7 +11,11 @@ const streamAgent = async ({ token, body, signal, onEvent }) => {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.message || "Request failed");
+    const error = new Error(data.message || "Request failed");
+    // the credit limit carries its own status and reset time for the banner
+    error.status = response.status;
+    if (data.resetAt) error.resetAt = data.resetAt;
+    throw error;
   }
 
   const reader = response.body.getReader();

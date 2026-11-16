@@ -50,6 +50,8 @@ export const messageSchema = new mongoose.Schema(
     zip: {
       name: { type: String },
       fileCount: { type: Number },
+      paths: [String],
+      kind: String,
     },
     // requestId of the stream that produced this message (used by the stop route)
     requestId: {

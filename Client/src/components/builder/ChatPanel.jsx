@@ -19,6 +19,7 @@ import Greeting from '../Greeting';
 import ChatImage from '../chat/ChatImage';
 import ZipCard from '../chat/ZipCard';
 import UserMessage from '../chat/UserMessage';
+import CreditLimitBanner from '../CreditLimitBanner';
 import uploadService from '../../services/uploadService';
 import { pasteFiles } from '../../utils/clipboardFiles';
 
@@ -40,6 +41,10 @@ export default function ChatPanel({
   onImageEditError,
   onDownloadZip,
   onEditMessage,
+  onOpenZip,
+  limitNotice = null,
+  onContinue,
+  onDismissLimitNotice,
 }) {
   const [inputText, setInputText] = useState('');
   const [mode, setMode] = useState(activeMode); // 'Chat' or 'Build'
@@ -47,7 +52,8 @@ export default function ChatPanel({
   const [isUploading, setIsUploading] = useState(false);
   const { user } = useSelector((state) => state.auth);
   const fileInputRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  // the messages scroll container is scrolled to the bottom directly
+  const scrollRef = useRef(null);
 
   const lastMessage = messages[messages.length - 1];
   const showStatus = isGenerating && (!lastMessage?.isStreaming || isWritingFiles);
@@ -63,7 +69,7 @@ export default function ChatPanel({
   }
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, isGenerating]);
 
   const handleModeToggle = (newMode) => {
@@ -208,7 +214,7 @@ export default function ChatPanel({
       </div>
 
       {/* Message List */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4 flex flex-col gap-4">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-muted">
             <div className="relative -top-2.5 w-14 h-14 mb-2 shrink-0">
@@ -273,7 +279,7 @@ export default function ChatPanel({
                   : 'I have generated the components and configured the application according to your request.');
 
               return (
-                <div key={index} className="self-start max-w-[95%] w-full flex gap-3">
+                <div key={index} className="self-start max-w-[95%] w-full flex gap-3 min-w-0">
                   <img src="/drexel-logo.svg" alt="Drexel-Ai" draggable={false} className="w-9 h-9 shrink-0" />
                   <div className="flex-1 min-w-0 pt-1 font-serif text-sm text-ink leading-relaxed">
                     <ChatMessageContent content={responseText} />
@@ -298,7 +304,9 @@ export default function ChatPanel({
                       <ZipCard
                         name={msg.zip.name}
                         fileCount={msg.zip.fileCount}
-                        onDownload={onDownloadZip}
+                        kind={msg.zip.kind}
+                        onOpen={() => onOpenZip(msg.zip)}
+                        onDownload={() => onDownloadZip(msg.zip)}
                       />
                     )}
                   </div>
@@ -317,11 +325,19 @@ export default function ChatPanel({
             <RunStatus label={label} />
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input Area Pinned at the Bottom */}
       <div className="px-4 pt-4 pb-5 border-t border-line bg-card shrink-0 flex flex-col gap-2">
+        {/* Credit limit banner sits directly above the prompt box */}
+        {limitNotice && (
+          <CreditLimitBanner
+            resetAt={limitNotice.resetAt}
+            canContinue={limitNotice.canContinue}
+            onContinue={onContinue}
+            onClose={onDismissLimitNotice}
+          />
+        )}
         <PromptGlow rounded="xl" active={isGenerating} className="prompt-glow--tight">
         <textarea
           rows={2}

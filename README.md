@@ -55,12 +55,12 @@ Building even a small website needs design, code, setup and debugging. Drexel-Ai
 
 The Planner picks the technology from the request instead of always generating React:
 
-| Request | Output |
-| --- | --- |
-| User names a technology (Vue, Python, Java, Node, ...) | Exactly that stack, as a complete production-style project (folders, dependency file, README, `.env.example`) |
-| Simple pages (login page, form, landing, portfolio, small widget) | Plain HTML + CSS + JavaScript, no build step |
-| Bigger frontend (routing, dashboards, many components) | React + Vite + Tailwind CSS |
-| Scripts, algorithms, automation, single files | Only the requested file(s) in the best-fitting language |
+| Request                                                           | Output                                                                                                        |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| User names a technology (Vue, Python, Java, Node, ...)            | Exactly that stack, as a complete production-style project (folders, dependency file, README, `.env.example`) |
+| Simple pages (login page, form, landing, portfolio, small widget) | Plain HTML + CSS + JavaScript, no build step                                                                  |
+| Bigger frontend (routing, dashboards, many components)            | React + Vite + Tailwind CSS                                                                                   |
+| Scripts, algorithms, automation, single files                     | Only the requested file(s) in the best-fitting language                                                       |
 
 - **Design level** is chosen from the wording of the request: `simple`, `polished` or `premium`
 - Plain HTML/CSS/JS and React projects get a **live preview**; other stacks are delivered as files with a download button (no browser preview)
@@ -92,9 +92,9 @@ The Planner picks the technology from the request instead of always generating R
 
 ## User Roles
 
-| Role  | Capabilities                                                                                       |
-| ----- | -------------------------------------------------------------------------------------------------- |
-| User  | Chat, build projects, preview/edit/download code, view usage, manage own profile                   |
+| Role  | Capabilities                                                                                        |
+| ----- | --------------------------------------------------------------------------------------------------- |
+| User  | Chat, build projects, preview/edit/download code, view usage, manage own profile                    |
 | Admin | Everything a user can do, plus platform stats, user list, credit adjustment, block and delete users |
 
 ## Tech Stack
@@ -177,20 +177,20 @@ The Planner picks the technology from the request instead of always generating R
 
 `POST /api/agent/stream` returns `text/event-stream`. Read it with `fetch` + `ReadableStream` (not axios) and send the Bearer header manually. Cancel with `AbortController.abort()` — the tokens already used are still charged.
 
-| Event | Data |
-| --- | --- |
-| `meta` | `{ projectId, chatId, mode, type }` |
-| `status` | `{ agent, message }` |
-| `token` | `{ agent, phase, text }` |
-| `plan` | `{ plan }` |
-| `agent_switch` | `{ from, to }` |
-| `file_start` | `{ path, phase }` |
-| `file_chunk` | `{ path, text, phase }` (live code) |
-| `file_end` | `{ path, content, phase }` (final file content) |
-| `warning` | `{ message }` |
-| `error` | `{ message }` |
-| `credits` | `{ credits, used }` |
-| `done` | `{ projectId, chatId, mode, aborted, failed, changedFiles, tokensUsed, creditsUsed, credits }` |
+| Event          | Data                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `meta`         | `{ projectId, chatId, mode, type }`                                                            |
+| `status`       | `{ agent, message }`                                                                           |
+| `token`        | `{ agent, phase, text }`                                                                       |
+| `plan`         | `{ plan }`                                                                                     |
+| `agent_switch` | `{ from, to }`                                                                                 |
+| `file_start`   | `{ path, phase }`                                                                              |
+| `file_chunk`   | `{ path, text, phase }` (live code)                                                            |
+| `file_end`     | `{ path, content, phase }` (final file content)                                                |
+| `warning`      | `{ message }`                                                                                  |
+| `error`        | `{ message }`                                                                                  |
+| `credits`      | `{ credits, used }`                                                                            |
+| `done`         | `{ projectId, chatId, mode, aborted, failed, changedFiles, tokensUsed, creditsUsed, credits }` |
 
 Request body: `{ projectId | chatId, message, mode: "chat" | "build", type?: "prompt" | "fix", errorLog?, attachments? }` — send either a `projectId` (Builder) or a `chatId` (normal chat).
 
@@ -202,7 +202,6 @@ Request body: `{ projectId | chatId, message, mode: "chat" | "build", type?: "pr
 - At the start of each new day (IST) the daily counter resets and credits are topped up to `DAILY_CREDITS` (credits are never lowered)
 - A build needs at least `BUILD_MIN_CREDITS` credits
 - The free tier of an LLM provider has its own limits too; keep the daily limits low if you share one API key between many users
-
 
 ## Database Design (Key Collections)
 
@@ -322,22 +321,22 @@ MAX_ZIP_MB=50
 
 ### Most-used variables explained
 
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `CF_ACCOUNT_ID` | – | Cloudflare account id for image generation |
-| `CF_API_TOKEN` | – | Cloudflare API token for image generation |
-| `IMAGE_MODEL` | – | Cloudflare Workers AI model that generates the images |
-| `IMAGE_CREDITS` | `5` | Credits charged per generated image |
-| `IMAGE_DAILY_LIMIT` | `10` | Images one user can generate per day (admins are unlimited) |
-| `VISION_MODEL` | – | Vision model for image description only (the agents stay on text models); empty = image understanding off |
-| `VISION_MAX_TOKENS` | `900` | Token budget for one image description call |
-| `VISION_REASONING_EFFORT` | `low` | Reasoning effort of the vision call (Gemini 3 cannot turn thinking off, "none" is rejected) |
-| `MAX_ZIP_MB` | `50` | Maximum upload size of a zip project file |
-| `CHAT_MAX_TOKENS` | `4000` | Token budget for one chat reply |
-| `CHAT_REASONING_EFFORT` | `low` | Reasoning effort for chat replies (low = fast answers, fewer empty replies) |
-| `DAILY_CREDITS` | `100` | Credits refilled every day at IST midnight |
-| `DAILY_CREDIT_LIMIT` | `100` | Maximum credits a user can accumulate |
-| `DEFAULT_CREDITS` | `200` | Credits a new user starts with |
+| Variable                  | Default | What it does                                                                                              |
+| ------------------------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `CF_ACCOUNT_ID`           | –       | Cloudflare account id for image generation                                                                |
+| `CF_API_TOKEN`            | –       | Cloudflare API token for image generation                                                                 |
+| `IMAGE_MODEL`             | –       | Cloudflare Workers AI model that generates the images                                                     |
+| `IMAGE_CREDITS`           | `5`     | Credits charged per generated image                                                                       |
+| `IMAGE_DAILY_LIMIT`       | `10`    | Images one user can generate per day (admins are unlimited)                                               |
+| `VISION_MODEL`            | –       | Vision model for image description only (the agents stay on text models); empty = image understanding off |
+| `VISION_MAX_TOKENS`       | `900`   | Token budget for one image description call                                                               |
+| `VISION_REASONING_EFFORT` | `low`   | Reasoning effort of the vision call (Gemini 3 cannot turn thinking off, "none" is rejected)               |
+| `MAX_ZIP_MB`              | `50`    | Maximum upload size of a zip project file                                                                 |
+| `CHAT_MAX_TOKENS`         | `4000`  | Token budget for one chat reply                                                                           |
+| `CHAT_REASONING_EFFORT`   | `low`   | Reasoning effort for chat replies (low = fast answers, fewer empty replies)                               |
+| `DAILY_CREDITS`           | `100`   | Credits refilled every day at IST midnight                                                                |
+| `DAILY_CREDIT_LIMIT`      | `100`   | Maximum credits a user can accumulate                                                                     |
+| `DEFAULT_CREDITS`         | `200`   | Credits a new user starts with                                                                            |
 
 ## Roadmap
 
@@ -351,7 +350,6 @@ MAX_ZIP_MB=50
 - [ ] Usage page connected to live data
 - [ ] Settings page (profile and password) connected to the API
 - [ ] Admin panel connected to the API
-- [ ] Version history UI (list and restore)
 - [ ] File attachments in chat (Cloudinary uploads)
 - [ ] Live code streaming inside the preview panel
 - [ ] More preview types (Vue, Svelte)
